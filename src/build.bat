@@ -7,12 +7,12 @@ set vulkan_inc="C:\VulkanSDK\1.2.135.0\Include"
 set vulkan_libpath="C:\VULKANSDK\1.2.135.0\LIB"
 
 set glm_inc=C:\lib\glm
-set IncludeFlags= -I%glfw_inc% -I%vulkan_inc% -I%glm_inc%
+set IncludeFlags=-I%glfw_inc% -I%vulkan_inc% -I%glm_inc%
 
-set CompilerFlags= %IncludeFlags% /EHsc /nologo /Zi
-set LinkerFlags= /LIBPATH:%glfw_libpath% /LIBPATH:%vulkan_libpath%
+set CompilerFlags=%IncludeFlags% /EHsc /nologo /Zi /MTd
+set LinkerFlags=/LIBPATH:%glfw_libpath% /LIBPATH:%vulkan_libpath% 
 
-set Sources1=../src/main.cpp ../src/logger.cpp
+set Sources1=../src/main.cpp ../src/logger.cpp ../src/vma.cpp
 
 IF NOT EXIST ..\build mkdir ..\build
 pushd ..\build

@@ -1,6 +1,6 @@
 @echo off
 
 pushd ..\build\
-start cmd /c flavk.exe
+start cmd /k main.exe
 popd
 
