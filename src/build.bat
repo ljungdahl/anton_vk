@@ -12,7 +12,7 @@ set IncludeFlags=-I%glfw_inc% -I%vulkan_inc% -I%glm_inc%
 set CompilerFlags=%IncludeFlags% /EHsc /nologo /Zi /MTd
 set LinkerFlags=/LIBPATH:%glfw_libpath% /LIBPATH:%vulkan_libpath% 
 
-set Sources1=../src/main.cpp ../src/logger.cpp ../src/vma.cpp
+set Sources1=../src/anton_vk.cpp ../src/logger.cpp ../src/vma.cpp
 
 IF NOT EXIST ..\build mkdir ..\build
 pushd ..\build
