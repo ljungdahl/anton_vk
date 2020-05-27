@@ -1,5 +1,7 @@
 #pragma once
 
+#define WIN32_LEAN_AND_MEAN
+
 #include <vector>
 
 #include "logger.h"
@@ -16,5 +18,6 @@
 
 #include "../external/vk_mem_alloc.h"
 
+#define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3.h>
-
+#include <GLFW/glfw3native.h>

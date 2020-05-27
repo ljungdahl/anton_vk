@@ -9,7 +9,7 @@ set vulkan_libpath="C:\VULKANSDK\1.2.135.0\LIB"
 set glm_inc=C:\lib\glm
 set IncludeFlags=-I%glfw_inc% -I%vulkan_inc% -I%glm_inc%
 
-set CompilerFlags=%IncludeFlags% /EHsc /nologo /Zi /MTd
+set CompilerFlags=%IncludeFlags% /EHsc /nologo /MTd
 set LinkerFlags=/LIBPATH:%glfw_libpath% /LIBPATH:%vulkan_libpath% 
 
 set Sources1=../src/anton_vk.cpp ../src/logger.cpp ../src/vma.cpp
