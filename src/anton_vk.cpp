@@ -3,6 +3,8 @@
 #include "swapchain.cpp"
 #include "resources.cpp"
 
+#define MAX_SWAPCHAIN_IMAGES 3
+
 // --------------------------------------------------------------
 // Forward declare
 void processKeyInput(GLFWwindow* windowPtr);
@@ -74,7 +76,7 @@ VkRenderPass createRenderPass(VkDevice device, VkFormat colorFormat)
     attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;//VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-    attachments[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    attachments[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
     VkRenderPassCreateInfo createInfo = { VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO };
     createInfo.attachmentCount = ARRAYSIZE(attachments);
@@ -183,26 +185,41 @@ i32 main(i32 argc, const i8** argv)
     VkCommandBuffer commandBuffer = 0;
     allocateCommandBuffer(device, commandPool, &commandBuffer);
 
-    VkFramebuffer framebuffers[3];
-    VkImageView swapchainView[3];
-    ASSERT(swapchain.imageCount <= 3 && swapchain.imageCount > 0);
-    for(u32 i = 0; i < swapchain.imageCount; i++)
-    {
-        swapchainView[i] = createImageView(device, swapchain.images[i], colorFormat);
-        framebuffers[i] = createFramebuffer(device, renderPass, swapchainView[i], swapchain.width, swapchain.height);
-    }
 
-
+    Image colorTarget = {};
+    createImage(colorTarget, device, swapchain.width, swapchain.height, colorFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, vma);
+    VkFramebuffer targetFramebuffer = 0;
+    targetFramebuffer = createFramebuffer(device, renderPass, colorTarget.view, swapchain.width, swapchain.height);
+    
     u32 imageIndex = 0;
     u32 frameCounter = 0;
+    f32 dt = 0.0f;
     while(!glfwWindowShouldClose(windowPtr))
     {
         glfwPollEvents();
 
         processKeyInput(windowPtr);
+
+
+        // Rendering
+        SwapchainStatus_t swapchainStatus = updateSwapchain(swapchain, gpu.device, device, surface, colorFormat);
+
+        if (swapchainStatus == Swapchain_NotReady)
+        {
+            continue; // surface size is zero, don't render anything.
+        }
+
+        if (swapchainStatus == Swapchain_Resized || !targetFramebuffer)
+        {
+            if(targetFramebuffer)
+            {
+                vkDestroyFramebuffer(device, targetFramebuffer, nullptr);
+            }
+            //targetFramebuffer = createFramebuffer(device, renderPass, colorTarget.view, swapchain.width, swapchain.height);
+
+        }
         
         VK_CHECK( vkAcquireNextImageKHR(device, swapchain.swapchain, U64_MAX, acquireSemaphore, /*fence=*/VK_NULL_HANDLE, &imageIndex) ); 
-        //Logger::Trace("Image index: %i", imageIndex);
         
         VK_CHECK( vkResetCommandPool(device, commandPool, 0) );
 
@@ -211,13 +228,26 @@ i32 main(i32 argc, const i8** argv)
 
         VK_CHECK( vkBeginCommandBuffer(commandBuffer, &cmdBeginInfo) );
 
-        VkClearColorValue color = { 1, 0, 1, 1 }; // MAGENTA
-        VkClearValue clearVals[1];
+        VkImageMemoryBarrier renderBeginBarrier = imageMemoryBarrier(colorTarget.image,
+                                                                     0,
+                                                                     0,
+                                                                     VK_IMAGE_LAYOUT_UNDEFINED,
+                                                                     VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+
+        vkCmdPipelineBarrier(commandBuffer,
+                             VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+                             VK_DEPENDENCY_BY_REGION_BIT,
+                             0, 0, 0, 0, 1, &renderBeginBarrier);
+        
+        VkClearColorValue color = { 48.0f/255.0f, 10.0f/255.0f, 36.0f/255.0f, 1 };
+        VkClearValue clearVals[2];
         clearVals[0].color = color;
+        clearVals[1].depthStencil = {1.0f, 0};
         
         VkRenderPassBeginInfo rpBeginInfo = { VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO };
         rpBeginInfo.renderPass = renderPass;
-        rpBeginInfo.framebuffer = framebuffers[imageIndex];
+        rpBeginInfo.framebuffer = targetFramebuffer;
         rpBeginInfo.renderArea.offset.x = 0;
         rpBeginInfo.renderArea.offset.y = 0;
         rpBeginInfo.renderArea.extent.width = swapchain.width;
@@ -227,9 +257,59 @@ i32 main(i32 argc, const i8** argv)
 
         vkCmdBeginRenderPass(commandBuffer, &rpBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
+        VkViewport viewport = { 0, (f32)swapchain.height, (f32)swapchain.width, -(f32)swapchain.height, 0, 1 }; //NOTE(anton): swap the height here to account for Vulkan screenspace layout? This is probably faster than multiplying proj matrix by -1?
+        VkRect2D scissor = { {0, 0}, {(u32)swapchain.width, (u32)swapchain.height} };
+
+        vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+        vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
         vkCmdEndRenderPass(commandBuffer);
+
+        VkImageMemoryBarrier copyBarrier = imageMemoryBarrier(colorTarget.image,
+                                                              VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                                                              VK_ACCESS_TRANSFER_READ_BIT,
+                                                              VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                                              VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+        VkImageMemoryBarrier copyBarriers[2] =
+            {
+                imageMemoryBarrier(colorTarget.image,
+                                   VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                                   VK_ACCESS_TRANSFER_READ_BIT,
+                                   VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL),
+                
+                imageMemoryBarrier(swapchain.images[imageIndex],
+                                   0,
+                                   VK_ACCESS_TRANSFER_WRITE_BIT,
+                                   VK_IMAGE_LAYOUT_UNDEFINED,
+                                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+            };
         
+        vkCmdPipelineBarrier(commandBuffer,
+                             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                             VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             VK_DEPENDENCY_BY_REGION_BIT,
+                             0, 0, 0, 0, ARRAYSIZE(copyBarriers), copyBarriers);
+
+        VkImageCopy copyRegion = {};
+        copyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        copyRegion.srcSubresource.layerCount = 1;
+        copyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        copyRegion.dstSubresource.layerCount = 1;
+        copyRegion.extent = { swapchain.width, swapchain.height, 1 };
+
+        vkCmdCopyImage(commandBuffer,
+                       colorTarget.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                       swapchain.images[imageIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                       1, &copyRegion);
+
+        VkImageMemoryBarrier presentBarrier = imageMemoryBarrier(swapchain.images[imageIndex], VK_ACCESS_TRANSFER_WRITE_BIT, 0, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+        vkCmdPipelineBarrier(commandBuffer,
+                             VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                             VK_DEPENDENCY_BY_REGION_BIT,
+                             0, 0, 0, 0, 1, &presentBarrier);
+
         VK_CHECK( vkEndCommandBuffer(commandBuffer) );
         
         VkPipelineStageFlags waitDstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -257,6 +337,8 @@ i32 main(i32 argc, const i8** argv)
         VK_CHECK( vkDeviceWaitIdle(device) );
 
         frameCounter++;
+        dt = (f32)(frameCounter % 255);
+        dt = dt*1.0f/255.0f;
         char title[256];
         sprintf(title, "frame: %i - imageIndex: %i - ", frameCounter, imageIndex);
         glfwSetWindowTitle(windowPtr, title);
@@ -267,6 +349,7 @@ i32 main(i32 argc, const i8** argv)
         glfwDestroyWindow(windowPtr);
     }
     glfwTerminate();
+
     
     return 0;   
 }

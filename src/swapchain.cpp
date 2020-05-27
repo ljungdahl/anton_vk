@@ -60,7 +60,7 @@ VkSwapchainKHR createSwapchainKHR(VkDevice device, VkSurfaceKHR surface,
     createInfo.imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
     createInfo.imageExtent = {width, height};
     createInfo.imageArrayLayers = 1; // REQUIRED
-    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    createInfo.imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     //TODO(anton): Mailbox instead of FIFO? FIFO is more widely supported.
     createInfo.presentMode = VSYNC ? VK_PRESENT_MODE_FIFO_KHR : VK_PRESENT_MODE_IMMEDIATE_KHR;
@@ -100,7 +100,32 @@ void createSwapchain(Swapchain_t& result, VkPhysicalDevice physicalDevice,
     result.imageCount = imageCount;
 }
 
-SwapchainStatus_t updateSwapchain()
+SwapchainStatus_t updateSwapchain(Swapchain_t& swapchain, VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, VkFormat format)
 {
-    return Swapchain_NotReady;
+    
+    VkSurfaceCapabilitiesKHR surfaceCaps;
+    VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &surfaceCaps));
+
+    u32 newWidth = surfaceCaps.currentExtent.width;
+    u32 newHeight = surfaceCaps.currentExtent.height;
+
+    if(newWidth == 0 || newHeight == 0)
+    {
+        return Swapchain_NotReady;
+    }
+
+    if(newWidth == swapchain.width && newHeight == swapchain.height)
+    {
+        return Swapchain_Ready; // Nothing changed.
+    }
+    
+    // ELSE: Swapchain resized! We have to recreate.
+    Swapchain_t oldSwapchain = swapchain;    
+    createSwapchain(swapchain, physicalDevice, device, surface, format, oldSwapchain.swapchain);
+    
+    VK_CHECK( vkDeviceWaitIdle(device) ); //Make sure we aren't using old swapchain before destroying 
+
+    destroySwapchain(device, oldSwapchain);
+    
+    return Swapchain_Resized;
 }
