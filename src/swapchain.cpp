@@ -40,6 +40,36 @@ VkFormat getSwapchainFormat(VkPhysicalDevice physicalDevice, VkSurfaceKHR surfac
     return surface_formats[0].format;
 }
 
+static
+VkFormat getDepthFormat(VkPhysicalDevice physicalDevice) {
+    // Since all depth formats may be optional, we need to find a suitable depth format to use
+    // Start with the highest precision packed format
+    std::vector<VkFormat> possibleDepthFormats = {
+        VK_FORMAT_D32_SFLOAT_S8_UINT,
+        VK_FORMAT_D32_SFLOAT,
+        VK_FORMAT_D24_UNORM_S8_UINT,
+        VK_FORMAT_D16_UNORM_S8_UINT,
+        VK_FORMAT_D16_UNORM
+    };
+
+    VkFormat depthFormat = VK_FORMAT_D32_SFLOAT;
+    
+    for (auto& format : possibleDepthFormats)
+    {
+        VkFormatProperties formatProps;
+        vkGetPhysicalDeviceFormatProperties(physicalDevice, format, &formatProps);
+        // Format must support depth stencil attachment for optimal tiling
+        if (formatProps.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)
+        {
+            depthFormat = format;
+            return depthFormat;
+        }
+    }
+
+    Logger::Warn("Fallback depth format: VK_FORMAT_D32_SFLOAT (may not be supported/support stencil attachment for optimal timing)");
+    return depthFormat;
+}
+
 
 void destroySwapchain(VkDevice device, const Swapchain_t& swapchain)
 {
@@ -69,7 +99,7 @@ VkSwapchainKHR createSwapchainKHR(VkDevice device, VkSurfaceKHR surface,
     createInfo.presentMode = VSYNC ? VK_PRESENT_MODE_FIFO_KHR : VK_PRESENT_MODE_IMMEDIATE_KHR;
     createInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
     createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR; 
-    createInfo.clipped = VK_TRUE;
+    //createInfo.clipped = VK_TRUE;
     // Got a validation layer error like this: vkCreateSwapchainKHR: internal drawable creation failed
     // When I had forgot to fill the oldSwapchain createInfo entry.
     createInfo.oldSwapchain = oldSwapchain;

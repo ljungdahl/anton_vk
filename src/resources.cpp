@@ -1,4 +1,12 @@
-struct Image
+struct Buffer_t
+{
+    VkBuffer buffer;
+    VmaAllocation vmaAlloc;
+    VmaAllocationInfo vmaInfo;
+    size_t size;
+};
+
+struct Image_t
 {
     VkImage image;
     VkImageView view;
@@ -6,9 +14,66 @@ struct Image
     VmaAllocationInfo vmaInfo;
 };
 
-void createImage(Image& result, VkDevice device,
+void createBuffer(Buffer_t& result, 
+                  VkBufferUsageFlags usage, VmaMemoryUsage vmaUsage,
+                  u32 size,
+                  VmaAllocator& vma_allocator)
+{
+    VkBufferCreateInfo createInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+    createInfo.size = size;
+    createInfo.usage = usage;
+    createInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    VmaAllocationCreateInfo vmaCreateInfo = {};
+    vmaCreateInfo.usage = vmaUsage; //NOTE(anton): If I specify usage they memory type flags will be setup automatically
+        
+    result.vmaAlloc = VK_NULL_HANDLE;
+    result.vmaInfo = {};
+    result.buffer = VK_NULL_HANDLE;
+    VK_CHECK( vmaCreateBuffer(vma_allocator, &createInfo, &vmaCreateInfo,
+                              &result.buffer,
+                              &result.vmaAlloc,
+                              &result.vmaInfo) );
+
+    result.size = size;
+}
+
+void uploadBuffer(VkDevice device, VkCommandPool commandPool,
+                  VkCommandBuffer commandBuffer,
+                  VkQueue queue,
+                  const Buffer_t& buffer, const Buffer_t& scratch,
+                  const void* data, u32 size, VmaAllocator& vma_allocator)
+{
+    void *mappedData;
+    vmaMapMemory(vma_allocator, scratch.vmaAlloc, &mappedData);
+    ASSERT(scratch.size >= size);
+    memcpy(mappedData, data, size);
+    vmaUnmapMemory(vma_allocator, scratch.vmaAlloc);
+
+    VK_CHECK( vkResetCommandPool(device, commandPool, 0));
+
+    VkCommandBufferBeginInfo beginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+    VK_CHECK( vkBeginCommandBuffer(commandBuffer, &beginInfo) );
+
+    VkBufferCopy region = { 0, 0, (VkDeviceSize)size };
+    vkCmdCopyBuffer(commandBuffer, scratch.buffer, buffer.buffer, 1, &region);
+
+    vkEndCommandBuffer(commandBuffer);
+
+    VkSubmitInfo submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &commandBuffer;
+
+    VK_CHECK(vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE));
+
+    VK_CHECK(vkDeviceWaitIdle(device));
+}
+
+void createImage(Image_t& result, VkDevice device,
                  u32 width, u32 height, VkFormat format, VkImageUsageFlags usage,
-                 VmaAllocator& vma_allocator)
+                 VkImageAspectFlags aspectMask, VmaAllocator& vma_allocator)
 {
     VkImageCreateInfo createInfo = { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
 
@@ -21,10 +86,7 @@ void createImage(Image& result, VkDevice device,
     createInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
     createInfo.usage = usage;
     createInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-
-    VkImage image = 0;
-    VK_CHECK(vkCreateImage(device, &createInfo, 0, &image));
-
+    
     VmaAllocationCreateInfo vmaCreateInfo = {};
     vmaCreateInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
     vmaCreateInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
@@ -36,8 +98,6 @@ void createImage(Image& result, VkDevice device,
                              &result.image,
                              &result.vmaAlloc,
                              &result.vmaInfo) );
-
-    VkImageAspectFlags aspectMask = (format == VK_FORMAT_D32_SFLOAT) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
 
     VkImageViewCreateInfo viewCreateInfo = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
     viewCreateInfo.image = result.image;
@@ -51,12 +111,12 @@ void createImage(Image& result, VkDevice device,
     VK_CHECK(vkCreateImageView(device, &viewCreateInfo, 0, &result.view));
 }
 
-void destroyImage(Image& image, VkDevice device, VmaAllocator& vma_allocator)
+void destroyImage(Image_t& image, VkDevice device, VmaAllocator& vma_allocator)
 {
     vmaDestroyImage(vma_allocator, image.image, image.vmaAlloc);
 }
 
-VkImageMemoryBarrier imageMemoryBarrier(VkImage image, VkAccessFlags srcAccessMask, VkAccessFlags dstAccessMask, VkImageLayout oldLayout, VkImageLayout newLayout)
+VkImageMemoryBarrier imageMemoryBarrier(VkImage image, VkAccessFlags srcAccessMask, VkAccessFlags dstAccessMask, VkImageLayout oldLayout, VkImageLayout newLayout, VkImageAspectFlags aspectMask)
 {
     VkImageMemoryBarrier barrier = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
     barrier.srcAccessMask = srcAccessMask;
@@ -66,18 +126,9 @@ VkImageMemoryBarrier imageMemoryBarrier(VkImage image, VkAccessFlags srcAccessMa
     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.image = image;
-    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; //TODO(anton): fix this so it works with depth
+    barrier.subresourceRange.aspectMask = aspectMask;
     barrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
     barrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
-
-    //VkAccessFlags              srcAccessMask;
-    //VkAccessFlags              dstAccessMask;
-    //VkImageLayout              oldLayout;
-    //VkImageLayout              newLayout;
-    //uint32_t                   srcQueueFamilyIndex;
-    //uint32_t                   dstQueueFamilyIndex;
-    //VkImage                    image;
-    //VkImageSubresourceRange    subresourceRange;
 
     return barrier;
 }

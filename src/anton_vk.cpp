@@ -3,12 +3,78 @@
 #include "device.cpp"
 #include "swapchain.cpp"
 #include "resources.cpp"
+#include "shaders.cpp"
 
 // --------------------------------------------------------------
 // Forward declare
 void processKeyInput(GLFWwindow* windowPtr);
 
 // --------------------------------------------------------------
+static
+VertexDescriptions_t getVertexDescriptions() {
+    VertexDescriptions_t vtx_descs = {};
+    
+    vtx_descs.bindings.resize(1);
+    vtx_descs.bindings[0].binding = 0;
+    vtx_descs.bindings[0].stride = sizeof(Vertex_t);
+    vtx_descs.bindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    vtx_descs.attributes.resize(2);
+    vtx_descs.attributes[0].binding = 0;
+    vtx_descs.attributes[0].location = 0;
+    vtx_descs.attributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+    vtx_descs.attributes[0].offset = offsetof(Vertex_t, pos);
+
+    vtx_descs.attributes[1].binding = 0;
+    vtx_descs.attributes[1].location = 1;
+    vtx_descs.attributes[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+    vtx_descs.attributes[1].offset = offsetof(Vertex_t, normal);
+    
+    vtx_descs.inputState = { VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
+    vtx_descs.inputState.vertexBindingDescriptionCount = (u32)vtx_descs.bindings.size();
+    vtx_descs.inputState.pVertexBindingDescriptions = vtx_descs.bindings.data();
+    vtx_descs.inputState.vertexAttributeDescriptionCount = (u32)vtx_descs.attributes.size();
+    vtx_descs.inputState.pVertexAttributeDescriptions = vtx_descs.attributes.data();
+
+    return vtx_descs;
+}
+
+void generateCube(Mesh_t& mesh)
+{
+    // Setup vertices indices for a colored cube
+    std::vector<glm::vec3> cubeVerts =
+        {
+            glm::vec3( -1.0f, -1.0f,  1.0f ),
+            glm::vec3(  1.0f, -1.0f,  1.0f ),
+            glm::vec3(  1.0f,  1.0f,  1.0f ),
+            glm::vec3( -1.0f,  1.0f,  1.0f ),
+            glm::vec3( -1.0f, -1.0f, -1.0f ),
+            glm::vec3(  1.0f, -1.0f, -1.0f ),
+            glm::vec3(  1.0f,  1.0f, -1.0f ),
+            glm::vec3( -1.0f,  1.0f, -1.0f ),
+        };
+    
+    std::vector<u32> cubeIndices = { 
+        0,1,2, 2,3,0, 1,5,6, 6,2,1, 7,6,5, 5,4,7, 4,0,3, 3,7,4, 4,5,1, 1,0,4, 3,2,6, 6,7,3, 
+    };
+
+    mesh.vertices.resize(cubeVerts.size());
+    u32 i = 0;
+    for (auto& vertex : mesh.vertices)
+    {
+        vertex.pos = cubeVerts[i];
+        i++;
+    }
+
+    mesh.indices.resize(cubeIndices.size());
+    i = 0;
+    for (auto index : cubeIndices) {
+        mesh.indices[i] = index;
+        i++;
+    }
+    
+    mesh.indexCount = (u32)cubeIndices.size();
+}
 
 static
 VmaAllocator createVMAallocator(VkInstance instance, VkPhysicalDevice physicalDevice, VkDevice device)
@@ -46,13 +112,18 @@ void allocateCommandBuffer(VkDevice device, VkCommandPool pool, VkCommandBuffer*
     VK_CHECK( vkAllocateCommandBuffers(device, &allocInfo, cmdBuffer) );
 }
 
-VkRenderPass createRenderPass(VkDevice device, VkFormat colorFormat)
+VkRenderPass createRenderPass(VkDevice device, VkFormat colorFormat, VkFormat depthFormat)
 {
 
     VkAttachmentReference colorAttachmentRef = {};
     colorAttachmentRef.attachment = 0;
     colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
+    VkAttachmentReference depthAttachmentRef = {};
+    depthAttachmentRef.attachment = 1;
+    depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    
     VkSubpassDescription subpass = {};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = 1;
@@ -67,15 +138,24 @@ VkRenderPass createRenderPass(VkDevice device, VkFormat colorFormat)
     dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     dependency.dependencyFlags = 0;
 
-    VkAttachmentDescription attachments[1] = {};
+    VkAttachmentDescription attachments[2] = {};
     attachments[0].format = colorFormat;
     attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
     attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; // NOTE(anton): Remember to have this on clear if you want a clear color on color attachment...
     attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;//VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    attachments[0].initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     attachments[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    attachments[1].format = depthFormat;
+    attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
+    attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachments[1].initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
     VkRenderPassCreateInfo createInfo = { VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO };
     createInfo.attachmentCount = ARRAYSIZE(attachments);
@@ -90,12 +170,13 @@ VkRenderPass createRenderPass(VkDevice device, VkFormat colorFormat)
     return renderPass;
 }
 
-VkFramebuffer createFramebuffer(VkDevice device, VkRenderPass renderPass, VkImageView imageView, u32 width, u32 height)
+VkFramebuffer createFramebuffer(VkDevice device, VkRenderPass renderPass, VkImageView colorView, VkImageView depthView, u32 width, u32 height)
 {
+    VkImageView attachments[2] = { colorView, depthView };
     VkFramebufferCreateInfo createInfo = { VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO };
     createInfo.renderPass = renderPass;
-    createInfo.attachmentCount = 1;
-    createInfo.pAttachments = &imageView;
+    createInfo.attachmentCount = ARRAYSIZE(attachments);
+    createInfo.pAttachments = attachments;
     createInfo.width = width;
     createInfo.height = height;
     createInfo.layers = 1;
@@ -114,16 +195,6 @@ VkSemaphore createSemaphore(VkDevice device)
     VK_CHECK(vkCreateSemaphore(device, &createInfo, 0, &semaphore));
 
     return semaphore;
-}
-
-static
-VkFence createWaitFence(VkDevice device)
-{    
-    VkFenceCreateInfo fenceCreateInfo = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
-    fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-    VkFence waitFence = VK_NULL_HANDLE;
-    VK_CHECK( vkCreateFence(device, &fenceCreateInfo, nullptr, &waitFence) );
-    return waitFence;
 }
 
 // --------------------------------------------------------------
@@ -166,6 +237,7 @@ i32 main(i32 argc, const i8** argv)
     VmaAllocator vma = createVMAallocator(instance, gpu.device, device);
     
     VkFormat swapchainFormat = getSwapchainFormat(gpu.device, surface);
+    //VkFormat depthFormat = getDepthFormat(gpu.device); //TODO(anton): fix so everything works with general depth format and stencil!
     VkFormat depthFormat = VK_FORMAT_D32_SFLOAT;
 
     VkQueue queue = 0;
@@ -178,13 +250,95 @@ i32 main(i32 argc, const i8** argv)
     Swapchain_t swapchain = {};
     createSwapchain(swapchain, gpu.device, device, surface, swapchainFormat, gpu.gfxFamilyIndex, /*oldSwapchain=*/VK_NULL_HANDLE);
 
-    VkRenderPass renderPass = createRenderPass(device, swapchainFormat);
+    VkRenderPass renderPass = createRenderPass(device, swapchainFormat, depthFormat);
 
     VkCommandPool commandPool = createCommandPool(device, gpu.gfxFamilyIndex);
     VkCommandBuffer commandBuffer = 0;
     allocateCommandBuffer(device, commandPool, &commandBuffer);
 
-    Image colorTarget = {};
+    MVPmatrices_t uboVS;
+
+    VertexDescriptions_t vtxDescs = getVertexDescriptions();
+    
+    Mesh_t cubeMesh;
+    generateCube(cubeMesh);
+
+    bool res = false;
+    Shader_t meshVS = {};
+    res = loadShader(meshVS, device, "mesh.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+    ASSERT(res);
+    
+    Shader_t goochFS = {};
+    res = loadShader(goochFS, device, "gooch.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+    ASSERT(res);
+    
+    Buffer_t vb = {};
+    Buffer_t vb_staging = {};
+    u32 vbSize = (u32)cubeMesh.vertices.size()*sizeof(cubeMesh.vertices[0]);
+    createBuffer(vb,
+                 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                 VMA_MEMORY_USAGE_GPU_ONLY,
+                 vbSize, vma);
+    createBuffer(vb_staging,
+                 VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                 VMA_MEMORY_USAGE_CPU_ONLY,
+                 vbSize, vma);
+    uploadBuffer(device, commandPool, commandBuffer, queue,
+                 vb, vb_staging,
+                 cubeMesh.vertices.data(), vbSize, vma);
+    
+    Buffer_t ib = {};
+    Buffer_t ib_staging = {};
+    u32 ibSize = (u32)cubeMesh.indices.size()*sizeof(cubeMesh.indices[0]);
+    createBuffer(ib,
+                 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                 VMA_MEMORY_USAGE_GPU_ONLY,
+                 ibSize, vma);
+    createBuffer(ib_staging,
+                 VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                 VMA_MEMORY_USAGE_CPU_ONLY,
+                 ibSize, vma);
+    uploadBuffer(device, commandPool, commandBuffer, queue,
+                 ib, ib_staging,
+                 cubeMesh.indices.data(), ibSize, vma);
+    
+    Buffer_t uboBuffer = {};
+    createBuffer(uboBuffer,
+                 VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                 VMA_MEMORY_USAGE_CPU_TO_GPU,
+                 sizeof(uboVS), vma);
+
+    glm::mat4 initView = glm::lookAt(glm::vec3(0.0f, 0.0f, 7.0f),
+                                     glm::vec3(0.0f, 0.0f, 7.0f) + glm::normalize(glm::vec3(0.0f, 0.0f, -1.0f)),
+                                     glm::vec3(0.0f, 1.0f, 0.0f)); 
+
+    uboVS.model = glm::mat4(1.0f);
+    auto rotMat = glm::rotate(uboVS.model, 1.0f, glm::vec3(0.0f, 1.0f, 0.0f));
+    //auto transMat = glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.02f, -1.0f));
+    auto transMat = glm::mat4(1.0f);
+    uboVS.model *= rotMat;
+    uboVS.model *= transMat;
+    uboVS.view = initView;
+    
+    VkDescriptorPool descPool = createDescriptorPool(device, 1);
+    VkDescriptorSetLayout descSetLayout;
+    descSetLayout = createDescriptorSetLayout(device);
+    VkDescriptorSet descSets[1];
+    allocateDescriptorSet(device, descPool, descSetLayout, descSets, 1);
+    updateDescriptorSet(device, uboBuffer, /*offset*/0, /*range*/sizeof(uboVS), descSets);
+
+    VkPipelineCache pipelineCache = 0;
+    VkPipelineLayout gfxPipeLayout = 0;
+    VkPipelineLayoutCreateInfo layout_create_info = { VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
+    layout_create_info.setLayoutCount = 1;
+    layout_create_info.pSetLayouts = &descSetLayout;
+    VK_CHECK( vkCreatePipelineLayout(device, &layout_create_info, nullptr, &gfxPipeLayout) );
+    VkPipeline meshPipeline = createGraphicsPipeline(device, pipelineCache, renderPass,
+                                                     meshVS, goochFS, gfxPipeLayout,
+                                                     &vtxDescs);
+    
+    Image_t colorTarget = {};
+    Image_t depthTarget = {};
     VkFramebuffer targetFramebuffer = 0;
     
     u32 frameCounter = 0;
@@ -194,11 +348,30 @@ i32 main(i32 argc, const i8** argv)
 
         processKeyInput(windowPtr);
 
-
         // End input processing - begin rendering calls
         
         SwapchainStatus_t swapchainStatus = updateSwapchain(swapchain, gpu.device, device, surface, swapchainFormat, gpu.gfxFamilyIndex);
 
+            
+        auto updateUBO = [&](MVPmatrices_t& uboVS, Buffer_t& uboBuffer, u32 width, u32 height, VmaAllocator& vma_allocator)
+                         {
+                             uboVS.proj = glm::perspective(glm::radians(40.0f),
+                                                           (f32)width / (f32)height,
+                                                           0.1f, 256.0f);
+
+                             auto rotMat = glm::rotate(glm::mat4(1.0f), 0.003f, glm::vec3(0.0f, 1.0f, 0.0f));
+                             auto transMat = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f));
+                             uboVS.model *= rotMat;
+                             uboVS.model *= transMat;
+            
+                             void *data;
+                             vmaMapMemory(vma_allocator, uboBuffer.vmaAlloc, &data);
+                             memcpy(data, &uboVS, sizeof(uboVS));
+                             vmaUnmapMemory(vma_allocator, uboBuffer.vmaAlloc);
+                         };
+
+        updateUBO(uboVS, uboBuffer, swapchain.width, swapchain.height, vma);
+        
         if (swapchainStatus == Swapchain_NotReady)
         {
             continue; // surface size is zero, don't render anything this iteration.
@@ -210,16 +383,22 @@ i32 main(i32 argc, const i8** argv)
             {
                 destroyImage(colorTarget, device, vma);
             }
+            if(depthTarget.image)
+            {
+                destroyImage(depthTarget, device, vma);
+            }
             if(targetFramebuffer)
             {
                 vkDestroyFramebuffer(device, targetFramebuffer, nullptr);
             }
             
-            createImage(colorTarget, device, swapchain.width, swapchain.height, swapchainFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, vma);
-            targetFramebuffer = createFramebuffer(device, renderPass, colorTarget.view, swapchain.width, swapchain.height);
-
+            createImage(colorTarget, device, swapchain.width, swapchain.height, swapchainFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_ASPECT_COLOR_BIT, vma);
+            createImage(depthTarget, device, swapchain.width, swapchain.height, depthFormat, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT, vma);
+            targetFramebuffer = createFramebuffer(device, renderPass, colorTarget.view, depthTarget.view, swapchain.width, swapchain.height);
         }
 
+        
+        
         u32 imageIndex = 0;
         VK_CHECK( vkAcquireNextImageKHR(device, swapchain.swapchain, U64_MAX, acquireSemaphore, /*fence=*/VK_NULL_HANDLE, &imageIndex) ); 
         
@@ -230,17 +409,28 @@ i32 main(i32 argc, const i8** argv)
         
         VK_CHECK( vkBeginCommandBuffer(commandBuffer, &cmdBeginInfo) );
 
-        VkImageMemoryBarrier renderBeginBarrier = imageMemoryBarrier(colorTarget.image,
-                                                                     0,
-                                                                     0,
-                                                                     VK_IMAGE_LAYOUT_UNDEFINED,
-                                                                     VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+        VkImageMemoryBarrier renderBeginBarriers[2] =
+            {
+                imageMemoryBarrier(colorTarget.image,
+                                   0,
+                                   0,
+                                   VK_IMAGE_LAYOUT_UNDEFINED,
+                                   VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                   VK_IMAGE_ASPECT_COLOR_BIT),
+                
+                imageMemoryBarrier(depthTarget.image,
+                                   0,
+                                   0,
+                                   VK_IMAGE_LAYOUT_UNDEFINED,
+                                   VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                                   VK_IMAGE_ASPECT_DEPTH_BIT)
+            };
 
         vkCmdPipelineBarrier(commandBuffer,
                              VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
                              VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
                              VK_DEPENDENCY_BY_REGION_BIT,
-                             0, 0, 0, 0, 1, &renderBeginBarrier);
+                             0, 0, 0, 0, ARRAYSIZE(renderBeginBarriers), renderBeginBarriers);
         
         VkClearColorValue color = { 48.0f/255.0f, 10.0f/255.0f, 36.0f/255.0f, 1 };
         VkClearValue clearVals[2];
@@ -259,12 +449,23 @@ i32 main(i32 argc, const i8** argv)
 
         vkCmdBeginRenderPass(commandBuffer, &rpBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipeline);
+        
         VkViewport viewport = { 0, (f32)swapchain.height, (f32)swapchain.width, -(f32)swapchain.height, 0, 1 }; //NOTE(anton): swap the height here to account for Vulkan screenspace layout? This is probably faster than multiplying proj matrix by -1?
         VkRect2D scissor = { {0, 0}, {(u32)swapchain.width, (u32)swapchain.height} };
 
         vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
         vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
+        VkDeviceSize offset = 0; //TODO(anton): Wat does this even do
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vb.buffer, &offset);
+        vkCmdBindIndexBuffer(commandBuffer, ib.buffer, 0, VK_INDEX_TYPE_UINT32);
+
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                gfxPipeLayout, 0, 1, descSets, 0, nullptr);
+        
+        vkCmdDrawIndexed(commandBuffer, cubeMesh.indexCount, 1, 0, 0, 0);
+        //vkCmdDraw(commandBuffer, (u32)cubeMesh.vertices.size(), 1, 0, 0);
         vkCmdEndRenderPass(commandBuffer);
 
         VkImageMemoryBarrier copyBarriers[2] =
@@ -273,13 +474,15 @@ i32 main(i32 argc, const i8** argv)
                                    VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
                                    VK_ACCESS_TRANSFER_READ_BIT,
                                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL),
+                                   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                   VK_IMAGE_ASPECT_COLOR_BIT),
                 
                 imageMemoryBarrier(swapchain.images[imageIndex],
                                    0,
                                    VK_ACCESS_TRANSFER_WRITE_BIT,
                                    VK_IMAGE_LAYOUT_UNDEFINED,
-                                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+                                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                   VK_IMAGE_ASPECT_COLOR_BIT)
             };
         
         vkCmdPipelineBarrier(commandBuffer,
@@ -304,7 +507,8 @@ i32 main(i32 argc, const i8** argv)
                                                                  VK_ACCESS_TRANSFER_WRITE_BIT,
                                                                  0,
                                                                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                                                 VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+                                                                 VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                                                                 VK_IMAGE_ASPECT_COLOR_BIT);
         vkCmdPipelineBarrier(commandBuffer,
                              VK_PIPELINE_STAGE_TRANSFER_BIT,
                              VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
@@ -365,10 +569,6 @@ void processKeyInput(GLFWwindow* windowPtr)
     }
 }
 
-
-
-
-
 // --------------------------------------------------------------
 /* NOTE(anton): The render to target -> copy to swapchain -> present setup explained.
    Swapchain is created with .imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
@@ -408,3 +608,14 @@ void processKeyInput(GLFWwindow* windowPtr)
    Other methods have been using one framebuffer for each swapchain image etc. Need to watch more zeux niagara streams
    to find out.
  */
+
+
+// static // This is note used?
+// VkFence createWaitFence(VkDevice device)
+// {    
+//     VkFenceCreateInfo fenceCreateInfo = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
+//     fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+//     VkFence waitFence = VK_NULL_HANDLE;
+//     VK_CHECK( vkCreateFence(device, &fenceCreateInfo, nullptr, &waitFence) );
+//     return waitFence;
+// }
