@@ -132,3 +132,85 @@ VkImageMemoryBarrier imageMemoryBarrier(VkImage image, VkAccessFlags srcAccessMa
 
     return barrier;
 }
+
+void loadObj(std::string ModelPath, Mesh_t* mmModel) {
+    tinyobj::attrib_t attrib;
+    std::vector<tinyobj::shape_t> shapes;
+    std::vector<tinyobj::material_t> materials;
+    std::string warn, err;
+
+    Logger::Trace("Loading obj model from path %s", ModelPath.c_str());
+    
+    if(!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, ModelPath.c_str())) {
+        Logger::Fatal("tinyobj::LoadObj failed!");
+    }
+
+    std::unordered_map<Vertex_t, size_t> unique_vertices;
+    
+    for (const auto& shape: shapes) {
+        for (const auto& index : shape.mesh.indices) {
+            Vertex_t vertex = {};
+
+            vertex.pos = {
+                attrib.vertices[3 * index.vertex_index + 0],
+                attrib.vertices[3 * index.vertex_index + 1],
+                attrib.vertices[3 * index.vertex_index + 2]
+            };
+
+            vertex.normal = {
+                attrib.normals[3 * index.normal_index + 0],
+                attrib.normals[3 * index.normal_index + 1],
+                attrib.normals[3 * index.normal_index + 2]                
+            };            
+
+            if(unique_vertices.count(vertex) == 0) {
+                unique_vertices[vertex] = (u32)mmModel->vertices.size();
+                mmModel->vertices.push_back(vertex);
+            }
+
+            mmModel->indices.push_back((u32)unique_vertices[vertex]);
+        }
+    }
+
+    
+    Logger::Trace("Number of vertices: %i", (u32)mmModel->vertices.size());
+    Logger::Trace("Number of indices: %i", (u32)mmModel->indices.size());
+    mmModel->indexCount = (u32)mmModel->indices.size();
+}
+
+void generateCube(Mesh_t& mesh)
+{
+    // Setup vertices indices for a colored cube
+    std::vector<glm::vec3> cubeVerts =
+        {
+            glm::vec3( -1.0f, -1.0f,  1.0f ),
+            glm::vec3(  1.0f, -1.0f,  1.0f ),
+            glm::vec3(  1.0f,  1.0f,  1.0f ),
+            glm::vec3( -1.0f,  1.0f,  1.0f ),
+            glm::vec3( -1.0f, -1.0f, -1.0f ),
+            glm::vec3(  1.0f, -1.0f, -1.0f ),
+            glm::vec3(  1.0f,  1.0f, -1.0f ),
+            glm::vec3( -1.0f,  1.0f, -1.0f ),
+        };
+    
+    std::vector<u32> cubeIndices = { 
+        0,1,2, 2,3,0, 1,5,6, 6,2,1, 7,6,5, 5,4,7, 4,0,3, 3,7,4, 4,5,1, 1,0,4, 3,2,6, 6,7,3, 
+    };
+
+    mesh.vertices.resize(cubeVerts.size());
+    u32 i = 0;
+    for (auto& vertex : mesh.vertices)
+    {
+        vertex.pos = cubeVerts[i];
+        i++;
+    }
+
+    mesh.indices.resize(cubeIndices.size());
+    i = 0;
+    for (auto index : cubeIndices) {
+        mesh.indices[i] = index;
+        i++;
+    }
+    
+    mesh.indexCount = (u32)cubeIndices.size();
+}

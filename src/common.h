@@ -4,6 +4,7 @@
 
 #include <vector>
 #include <fstream>
+#include <unordered_map>
 
 #include "logger.h"
 #include "typedefs.h"
@@ -18,6 +19,8 @@
 }
 
 #include "../external/vk_mem_alloc.h"
+#define TINYOBJLOADER_IMPLEMENTATION
+#include "../external/tiny_obj_loader.h"
 
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3.h>
@@ -56,6 +59,18 @@ struct Vertex_t {
         return seed;
     }
 };
+
+
+namespace std {
+    // hash function for Vertex
+    template<> struct hash<Vertex_t>
+    {
+        size_t operator()(Vertex_t const& vertex) const
+        {
+            return vertex.hash();
+        }
+    };
+}
 
 struct Mesh_t {
     std::vector<Vertex_t> vertices;

@@ -39,42 +39,6 @@ VertexDescriptions_t getVertexDescriptions() {
     return vtx_descs;
 }
 
-void generateCube(Mesh_t& mesh)
-{
-    // Setup vertices indices for a colored cube
-    std::vector<glm::vec3> cubeVerts =
-        {
-            glm::vec3( -1.0f, -1.0f,  1.0f ),
-            glm::vec3(  1.0f, -1.0f,  1.0f ),
-            glm::vec3(  1.0f,  1.0f,  1.0f ),
-            glm::vec3( -1.0f,  1.0f,  1.0f ),
-            glm::vec3( -1.0f, -1.0f, -1.0f ),
-            glm::vec3(  1.0f, -1.0f, -1.0f ),
-            glm::vec3(  1.0f,  1.0f, -1.0f ),
-            glm::vec3( -1.0f,  1.0f, -1.0f ),
-        };
-    
-    std::vector<u32> cubeIndices = { 
-        0,1,2, 2,3,0, 1,5,6, 6,2,1, 7,6,5, 5,4,7, 4,0,3, 3,7,4, 4,5,1, 1,0,4, 3,2,6, 6,7,3, 
-    };
-
-    mesh.vertices.resize(cubeVerts.size());
-    u32 i = 0;
-    for (auto& vertex : mesh.vertices)
-    {
-        vertex.pos = cubeVerts[i];
-        i++;
-    }
-
-    mesh.indices.resize(cubeIndices.size());
-    i = 0;
-    for (auto index : cubeIndices) {
-        mesh.indices[i] = index;
-        i++;
-    }
-    
-    mesh.indexCount = (u32)cubeIndices.size();
-}
 
 static
 VmaAllocator createVMAallocator(VkInstance instance, VkPhysicalDevice physicalDevice, VkDevice device)
@@ -245,7 +209,6 @@ i32 main(i32 argc, const i8** argv)
               
     VkSemaphore acquireSemaphore = createSemaphore(device);
     VkSemaphore releaseSemaphore = createSemaphore(device);
-    // VkFence waitFence = createWaitFence(device); // NOTE(anton): is this even needed?
 
     Swapchain_t swapchain = {};
     createSwapchain(swapchain, gpu.device, device, surface, swapchainFormat, gpu.gfxFamilyIndex, /*oldSwapchain=*/VK_NULL_HANDLE);
@@ -261,8 +224,8 @@ i32 main(i32 argc, const i8** argv)
     VertexDescriptions_t vtxDescs = getVertexDescriptions();
     
     Mesh_t cubeMesh;
-    generateCube(cubeMesh);
-
+    loadObj("../assets/bunny_soft.obj", &cubeMesh);
+    
     bool res = false;
     Shader_t meshVS = {};
     res = loadShader(meshVS, device, "mesh.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
@@ -308,9 +271,9 @@ i32 main(i32 argc, const i8** argv)
                  VMA_MEMORY_USAGE_CPU_TO_GPU,
                  sizeof(uboVS), vma);
 
-    glm::mat4 initView = glm::lookAt(glm::vec3(0.0f, 0.0f, 7.0f),
-                                     glm::vec3(0.0f, 0.0f, 7.0f) + glm::normalize(glm::vec3(0.0f, 0.0f, -1.0f)),
-                                     glm::vec3(0.0f, 1.0f, 0.0f)); 
+    glm::mat4 initView = glm::lookAt(glm::vec3(0.0f, 3.0f, 4.0f), // eye
+                                     glm::vec3(0.0f, 0.5f, 0.0f), // center
+                                     glm::vec3(0.0f, 1.0f, 0.0f)); // up 
 
     uboVS.model = glm::mat4(1.0f);
     auto rotMat = glm::rotate(uboVS.model, 1.0f, glm::vec3(0.0f, 1.0f, 0.0f));
@@ -352,7 +315,6 @@ i32 main(i32 argc, const i8** argv)
         
         SwapchainStatus_t swapchainStatus = updateSwapchain(swapchain, gpu.device, device, surface, swapchainFormat, gpu.gfxFamilyIndex);
 
-            
         auto updateUBO = [&](MVPmatrices_t& uboVS, Buffer_t& uboBuffer, u32 width, u32 height, VmaAllocator& vma_allocator)
                          {
                              uboVS.proj = glm::perspective(glm::radians(40.0f),
@@ -554,7 +516,6 @@ i32 main(i32 argc, const i8** argv)
         glfwDestroyWindow(windowPtr);
     }
     glfwTerminate();
-
     
     return 0;   
 }
