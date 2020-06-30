@@ -7,6 +7,7 @@ pushd ..\build\
 
 %glslc% ..\shaders\mesh.vert.glsl -o mesh.vert.spv
 %glslc% ..\shaders\gooch.frag.glsl -o gooch.frag.spv
+%glslc% ..\shaders\lambert.frag.glsl -o lambert.frag.spv
 
 
 popd

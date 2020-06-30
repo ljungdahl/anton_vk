@@ -1,3 +1,5 @@
+#include <cmath>
+#define M_PI 3.14159265f
 
 #include "common.h"
 #include "device.cpp"
@@ -92,6 +94,7 @@ VkRenderPass createRenderPass(VkDevice device, VkFormat colorFormat, VkFormat de
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &colorAttachmentRef;
+    subpass.pDepthStencilAttachment = &depthAttachmentRef;
 
     VkSubpassDependency dependency = {};
     dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
@@ -224,7 +227,7 @@ i32 main(i32 argc, const i8** argv)
     VertexDescriptions_t vtxDescs = getVertexDescriptions();
     
     Mesh_t cubeMesh;
-    loadObj("../assets/bunny_soft.obj", &cubeMesh);
+    loadObj("../assets/coords2_soft.obj", &cubeMesh);
     
     bool res = false;
     Shader_t meshVS = {};
@@ -232,7 +235,11 @@ i32 main(i32 argc, const i8** argv)
     ASSERT(res);
     
     Shader_t goochFS = {};
+    Shader_t lambertFS = {};
     res = loadShader(goochFS, device, "gooch.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+    ASSERT(res);
+    res = loadShader(lambertFS, device, "lambert.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+
     ASSERT(res);
     
     Buffer_t vb = {};
@@ -271,17 +278,23 @@ i32 main(i32 argc, const i8** argv)
                  VMA_MEMORY_USAGE_CPU_TO_GPU,
                  sizeof(uboVS), vma);
 
-    glm::mat4 initView = glm::lookAt(glm::vec3(0.0f, 3.0f, 4.0f), // eye
-                                     glm::vec3(0.0f, 0.5f, 0.0f), // center
+    glm::vec3 initCameraPos = glm::vec3(4.0f, 3.0f, 7.0f);
+    glm::mat4 initView = glm::lookAt(initCameraPos, // esye
+                                     glm::vec3(0.0f, 0.0f, 0.0f), // center
                                      glm::vec3(0.0f, 1.0f, 0.0f)); // up 
 
     uboVS.model = glm::mat4(1.0f);
-    auto rotMat = glm::rotate(uboVS.model, 1.0f, glm::vec3(0.0f, 1.0f, 0.0f));
+    auto rotMat = glm::rotate(uboVS.model, 0.0f, glm::vec3(0.0f, 1.0f, 0.0f));
     //auto transMat = glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.02f, -1.0f));
     auto transMat = glm::mat4(1.0f);
     uboVS.model *= rotMat;
     uboVS.model *= transMat;
     uboVS.view = initView;
+
+    PushConstants_t pushConstants;
+    glm::vec3 initLightPos = glm::vec3(30.0f, 0.0f, 0.0f);
+    //glm::vec3 initLightPos = initCameraPos;
+    pushConstants.lightPos = initLightPos;
     
     VkDescriptorPool descPool = createDescriptorPool(device, 1);
     VkDescriptorSetLayout descSetLayout;
@@ -292,12 +305,21 @@ i32 main(i32 argc, const i8** argv)
 
     VkPipelineCache pipelineCache = 0;
     VkPipelineLayout gfxPipeLayout = 0;
+
+    VkPushConstantRange pushConstantRange;
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pushConstantRange.size = sizeof(pushConstants);
+    pushConstantRange.offset = 0;
+    
     VkPipelineLayoutCreateInfo layout_create_info = { VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
     layout_create_info.setLayoutCount = 1;
     layout_create_info.pSetLayouts = &descSetLayout;
+    layout_create_info.pushConstantRangeCount = 1;
+    layout_create_info.pPushConstantRanges = &pushConstantRange;
+    
     VK_CHECK( vkCreatePipelineLayout(device, &layout_create_info, nullptr, &gfxPipeLayout) );
     VkPipeline meshPipeline = createGraphicsPipeline(device, pipelineCache, renderPass,
-                                                     meshVS, goochFS, gfxPipeLayout,
+                                                     meshVS, lambertFS, gfxPipeLayout,
                                                      &vtxDescs);
     
     Image_t colorTarget = {};
@@ -305,10 +327,18 @@ i32 main(i32 argc, const i8** argv)
     VkFramebuffer targetFramebuffer = 0;
     
     u32 frameCounter = 0;
+
+    f64 deltaTime = 0.0f;
+    f64 elapsedTime = 0.0f;
+    f64 previousTime = 0.0f;
+    glfwSetTime(elapsedTime);
+    
     while(!glfwWindowShouldClose(windowPtr))
     {
         glfwPollEvents();
 
+        deltaTime = glfwGetTime()-previousTime;
+        
         processKeyInput(windowPtr);
 
         // End input processing - begin rendering calls
@@ -320,11 +350,12 @@ i32 main(i32 argc, const i8** argv)
                              uboVS.proj = glm::perspective(glm::radians(40.0f),
                                                            (f32)width / (f32)height,
                                                            0.1f, 256.0f);
-
-                             auto rotMat = glm::rotate(glm::mat4(1.0f), 0.003f, glm::vec3(0.0f, 1.0f, 0.0f));
-                             auto transMat = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f));
-                             uboVS.model *= rotMat;
-                             uboVS.model *= transMat;
+                             uboVS.proj[1][1] *= -1;
+                             
+                             //auto rotMat = glm::rotate(glm::mat4(1.0f), 0.003f, glm::vec3(0.0f, 1.0f, 0.0f));
+                             //auto transMat = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f));
+                             //uboVS.model *= rotMat;
+                             //uboVS.model *= transMat;
             
                              void *data;
                              vmaMapMemory(vma_allocator, uboBuffer.vmaAlloc, &data);
@@ -332,7 +363,14 @@ i32 main(i32 argc, const i8** argv)
                              vmaUnmapMemory(vma_allocator, uboBuffer.vmaAlloc);
                          };
 
+        auto updatePushConstants = [&](PushConstants_t &pc, f64 t)
+                                   {
+                                       f64 scale = 100.0f;
+                                       pc.lightPos.z += scale*t;
+                                   };
+        
         updateUBO(uboVS, uboBuffer, swapchain.width, swapchain.height, vma);
+        //updatePushConstants(pushConstants, deltaTime);
         
         if (swapchainStatus == Swapchain_NotReady)
         {
@@ -411,9 +449,21 @@ i32 main(i32 argc, const i8** argv)
 
         vkCmdBeginRenderPass(commandBuffer, &rpBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipeline);
+        vkCmdPushConstants(commandBuffer, gfxPipeLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConstants), &pushConstants);
         
-        VkViewport viewport = { 0, (f32)swapchain.height, (f32)swapchain.width, -(f32)swapchain.height, 0, 1 }; //NOTE(anton): swap the height here to account for Vulkan screenspace layout? This is probably faster than multiplying proj matrix by -1?
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipeline);
+
+        //NOTE(anton): swap the height here to account for Vulkan
+        //screenspace layout? This is probably faster than multiplying
+        //proj matrix by -1? -- not used right now.
+        VkViewport viewport = {};
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.width = (f32)swapchain.width;
+        viewport.height = (f32)swapchain.height;
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+        
         VkRect2D scissor = { {0, 0}, {(u32)swapchain.width, (u32)swapchain.height} };
 
         vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
@@ -504,10 +554,11 @@ i32 main(i32 argc, const i8** argv)
         VK_CHECK( vkDeviceWaitIdle(device) );
 
         // End render calls
-
+        previousTime = elapsedTime;
+        elapsedTime = glfwGetTime();
         frameCounter++;
         char title[256];
-        sprintf(title, "frame: %i - imageIndex: %i - ", frameCounter, imageIndex);
+        sprintf(title, "frame: %i - imageIndex: %i - delta time: %f - elapsed time: %f", frameCounter, imageIndex, deltaTime, elapsedTime);
         glfwSetWindowTitle(windowPtr, title);
     }
     
