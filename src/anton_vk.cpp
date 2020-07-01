@@ -291,10 +291,12 @@ i32 main(i32 argc, const i8** argv)
     uboVS.model *= transMat;
     uboVS.view = initView;
 
-    PushConstants_t pushConstants;
-    glm::vec3 initLightPos = glm::vec3(30.0f, 0.0f, 0.0f);
+    std::vector<glm::vec4> pushConstants; //NOTE(anton): vec4 instead of vec3 for alignment requirements
+    glm::vec4 initLight1Pos = glm::vec4(-1.0f, 1.0f, 8.0f, 1.0f);
+    glm::vec4 initLight2Pos = glm::vec4(0.0f, 1.0f, -3.0f, 1.0f);
     //glm::vec3 initLightPos = initCameraPos;
-    pushConstants.lightPos = initLightPos;
+    pushConstants.push_back(initLight1Pos);
+    pushConstants.push_back(initLight2Pos);
     
     VkDescriptorPool descPool = createDescriptorPool(device, 1);
     VkDescriptorSetLayout descSetLayout;
@@ -308,7 +310,8 @@ i32 main(i32 argc, const i8** argv)
 
     VkPushConstantRange pushConstantRange;
     pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    pushConstantRange.size = sizeof(pushConstants);
+    //pushConstantRange.size = (u32)pushConstants.size();
+    pushConstantRange.size = sizeof(pushConstants); // NOTE(anton): SW samples uses this instead of above, why?
     pushConstantRange.offset = 0;
     
     VkPipelineLayoutCreateInfo layout_create_info = { VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
@@ -363,14 +366,15 @@ i32 main(i32 argc, const i8** argv)
                              vmaUnmapMemory(vma_allocator, uboBuffer.vmaAlloc);
                          };
 
-        auto updatePushConstants = [&](PushConstants_t &pc, f64 t)
+        auto updatePushConstants = [&](std::vector<glm::vec4> &pc, f64 t)
                                    {
-                                       f64 scale = 100.0f;
-                                       pc.lightPos.z += scale*t;
+                                       f64 scale = 0.3f;
+                                       f64 angle = 2.0f*M_PI*t;
+                                       pc[0].x += scale*cos(angle/4.0f);
                                    };
         
         updateUBO(uboVS, uboBuffer, swapchain.width, swapchain.height, vma);
-        //updatePushConstants(pushConstants, deltaTime);
+        updatePushConstants(pushConstants, elapsedTime);
         
         if (swapchainStatus == Swapchain_NotReady)
         {
@@ -449,7 +453,9 @@ i32 main(i32 argc, const i8** argv)
 
         vkCmdBeginRenderPass(commandBuffer, &rpBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-        vkCmdPushConstants(commandBuffer, gfxPipeLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConstants), &pushConstants);
+        vkCmdPushConstants(commandBuffer, gfxPipeLayout, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                           sizeof(pushConstants), pushConstants.data());
+                           //(u32)pushConstants.size(), pushConstants.data());
         
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipeline);
 

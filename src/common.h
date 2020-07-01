@@ -84,9 +84,7 @@ struct MVPmatrices_t {
     glm::mat4 proj;
 };
 
-struct PushConstants_t {
-    glm::vec3 lightPos;
-};
+#define NUM_LIGHTS 4
 
 struct VertexDescriptions_t {
     VkPipelineVertexInputStateCreateInfo inputState;
