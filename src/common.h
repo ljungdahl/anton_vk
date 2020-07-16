@@ -72,11 +72,6 @@ namespace std {
     };
 }
 
-struct Mesh_t {
-    std::vector<Vertex_t> vertices;
-    std::vector<u32> indices;
-    u32 indexCount = 0;
-};   
 
 struct MVPmatrices_t {
     glm::mat4 model;
@@ -84,7 +79,11 @@ struct MVPmatrices_t {
     glm::mat4 proj;
 };
 
-#define NUM_LIGHTS 4
+struct Mesh_t {
+    std::vector<Vertex_t> vertices;
+    std::vector<u32> indices;
+    u32 indexCount = 0;
+};   
 
 struct VertexDescriptions_t {
     VkPipelineVertexInputStateCreateInfo inputState;

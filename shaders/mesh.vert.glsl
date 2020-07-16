@@ -11,6 +11,7 @@ layout(binding = 0) uniform MVPmatrices_t {
 
 layout(push_constant) uniform PushConsts {
     vec4 lightPos[NUM_LIGHTS];
+    //vec4 cameraPos;
 } pc;
 
 layout(location = 0) in vec3 inPosition;
@@ -37,6 +38,7 @@ void main() {
     {
         light_dirs[i] = pc.lightPos[i].xyz - world_space_vertex.xyz;
     }
+    //viewPos = pc.cameraPos.xyz;
     
 }
 

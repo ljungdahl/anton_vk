@@ -11,6 +11,14 @@
 // Forward declare
 void processKeyInput(GLFWwindow* windowPtr);
 
+auto updatePushConstants = [&](std::vector<glm::vec4> &pc, f64 t)
+                           {
+                               f64 scale = 0.3f;
+                               f64 angle = 2.0f*M_PI*t;
+                               pc[0].x += scale*cos(angle/4.0f);
+                           };
+
+
 // --------------------------------------------------------------
 static
 VertexDescriptions_t getVertexDescriptions() {
@@ -228,6 +236,7 @@ i32 main(i32 argc, const i8** argv)
     
     Mesh_t cubeMesh;
     loadObj("../assets/coords2_soft.obj", &cubeMesh);
+    //loadObj("../assets/buddha_soft.obj", &cubeMesh);
     
     bool res = false;
     Shader_t meshVS = {};
@@ -239,7 +248,6 @@ i32 main(i32 argc, const i8** argv)
     res = loadShader(goochFS, device, "gooch.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
     ASSERT(res);
     res = loadShader(lambertFS, device, "lambert.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
-
     ASSERT(res);
     
     Buffer_t vb = {};
@@ -294,6 +302,7 @@ i32 main(i32 argc, const i8** argv)
     std::vector<glm::vec4> pushConstants; //NOTE(anton): vec4 instead of vec3 for alignment requirements
     glm::vec4 initLight1Pos = glm::vec4(-1.0f, 1.0f, 8.0f, 1.0f);
     glm::vec4 initLight2Pos = glm::vec4(0.0f, 1.0f, -3.0f, 1.0f);
+    
     //glm::vec3 initLightPos = initCameraPos;
     pushConstants.push_back(initLight1Pos);
     pushConstants.push_back(initLight2Pos);
@@ -366,12 +375,6 @@ i32 main(i32 argc, const i8** argv)
                              vmaUnmapMemory(vma_allocator, uboBuffer.vmaAlloc);
                          };
 
-        auto updatePushConstants = [&](std::vector<glm::vec4> &pc, f64 t)
-                                   {
-                                       f64 scale = 0.3f;
-                                       f64 angle = 2.0f*M_PI*t;
-                                       pc[0].x += scale*cos(angle/4.0f);
-                                   };
         
         updateUBO(uboVS, uboBuffer, swapchain.width, swapchain.height, vma);
         updatePushConstants(pushConstants, elapsedTime);
@@ -455,7 +458,6 @@ i32 main(i32 argc, const i8** argv)
 
         vkCmdPushConstants(commandBuffer, gfxPipeLayout, VK_SHADER_STAGE_VERTEX_BIT, 0,
                            sizeof(pushConstants), pushConstants.data());
-                           //(u32)pushConstants.size(), pushConstants.data());
         
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipeline);
 
