@@ -3,7 +3,7 @@
 
 #define NUM_LIGHTS 2
 
-layout(binding = 0) uniform MVPmatrices_t {
+layout(binding = 0) uniform Uniforms_t {
    mat4 model;
    mat4 view;
    mat4 proj;
@@ -30,6 +30,7 @@ void main() {
     vec4 view_space_vertex = ubo.view * world_space_vertex;
     
     gl_Position = ubo.proj * view_space_vertex;
+
     wsVertex = world_space_vertex.xyz;
 
     outNormal = mat3(transpose(inverse(ubo.model))) * inNormal;

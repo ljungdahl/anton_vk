@@ -1,19 +1,7 @@
-#define VSYNC 1
+#include "logger.h"
+#include "vk_common.h"
+#include "vk_swapchain.h"
 
-struct Swapchain_t
-{
-    VkSwapchainKHR swapchain;
-    std::vector<VkImage> images;
-    u32 width, height;
-    u32 imageCount;
-};
-
-enum SwapchainStatus_t
-{
-    Swapchain_Ready,
-    Swapchain_Resized,
-    Swapchain_NotReady,
-};
 
 VkFormat getSwapchainFormat(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface)
 {
@@ -23,12 +11,12 @@ VkFormat getSwapchainFormat(VkPhysicalDevice physicalDevice, VkSurfaceKHR surfac
     ASSERT( formats_count > 0 );
     std::vector<VkSurfaceFormatKHR> surface_formats(formats_count);
     VK_CHECK( vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formats_count, surface_formats.data()) );
-    
+
     if(surface_formats.size() == 1 && surface_formats[0].format == VK_FORMAT_UNDEFINED)
     {
         return VK_FORMAT_R8G8B8A8_UNORM;
     }
-    
+
     for( VkSurfaceFormatKHR &surface_format : surface_formats )
     {
         if( surface_format.format == VK_FORMAT_R8G8B8A8_UNORM )
@@ -45,15 +33,15 @@ VkFormat getDepthFormat(VkPhysicalDevice physicalDevice) {
     // Since all depth formats may be optional, we need to find a suitable depth format to use
     // Start with the highest precision packed format
     std::vector<VkFormat> possibleDepthFormats = {
-        VK_FORMAT_D32_SFLOAT_S8_UINT,
-        VK_FORMAT_D32_SFLOAT,
-        VK_FORMAT_D24_UNORM_S8_UINT,
-        VK_FORMAT_D16_UNORM_S8_UINT,
-        VK_FORMAT_D16_UNORM
+            VK_FORMAT_D32_SFLOAT_S8_UINT,
+            VK_FORMAT_D32_SFLOAT,
+            VK_FORMAT_D24_UNORM_S8_UINT,
+            VK_FORMAT_D16_UNORM_S8_UINT,
+            VK_FORMAT_D16_UNORM
     };
 
     VkFormat depthFormat = VK_FORMAT_D32_SFLOAT;
-    
+
     for (auto& format : possibleDepthFormats)
     {
         VkFormatProperties formatProps;
@@ -90,7 +78,7 @@ VkSwapchainKHR createSwapchainKHR(VkDevice device, VkSurfaceKHR surface,
     createInfo.imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
     createInfo.imageExtent.width = width;
     createInfo.imageExtent.height = height;
-    createInfo.imageArrayLayers = 1; 
+    createInfo.imageArrayLayers = 1;
     createInfo.imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     createInfo.queueFamilyIndexCount = 1;
@@ -98,7 +86,7 @@ VkSwapchainKHR createSwapchainKHR(VkDevice device, VkSurfaceKHR surface,
     //TODO(anton): Mailbox instead of FIFO? FIFO is more widely supported.
     createInfo.presentMode = VSYNC ? VK_PRESENT_MODE_FIFO_KHR : VK_PRESENT_MODE_IMMEDIATE_KHR;
     createInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
-    createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR; 
+    createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     //createInfo.clipped = VK_TRUE;
     // Got a validation layer error like this: vkCreateSwapchainKHR: internal drawable creation failed
     // When I had forgot to fill the oldSwapchain createInfo entry.

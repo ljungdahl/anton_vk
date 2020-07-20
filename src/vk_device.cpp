@@ -1,13 +1,8 @@
+#include <vector>
 
-struct GPUInfo_t
-{
-    VkPhysicalDevice                    device;
-    VkPhysicalDeviceFeatures            features;
-    VkPhysicalDeviceProperties          props;
-    VkPhysicalDeviceMemoryProperties    memProps;
-    u32 gfxFamilyIndex;
-    u32 presentFamilyIndex;
-};
+#include "common.h"
+#include "logger.h"
+#include "vk_device.h"
 
 VkInstance createInstance()
 {
@@ -17,33 +12,33 @@ VkInstance createInstance()
     appInfo.pEngineName = "TBA";
     appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
     appInfo.apiVersion = VK_API_VERSION_1_2;
-    
+
     VkInstanceCreateInfo createInfo = { VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO };
     createInfo.pApplicationInfo = &appInfo;
 
     const char* extensions[] = {
-        VK_KHR_SURFACE_EXTENSION_NAME,
-#ifdef VK_USE_PLATFORM_WIN32_KHR        
-        VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
+            VK_KHR_SURFACE_EXTENSION_NAME,
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+            VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
 #endif
 #ifdef _DEBUG
-        VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
+            VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
 #endif
     };
-    
+
     createInfo.enabledExtensionCount = ARRAYSIZE(extensions);
     createInfo.ppEnabledExtensionNames = extensions;
-    
+
     const char* requiredValidationLayers[] = {"VK_LAYER_KHRONOS_validation"};
-    
-    // Now we fill in the createInfo with the required layer!    
+
+    // Now we fill in the createInfo with the required layer!
     createInfo.enabledLayerCount =  ARRAYSIZE(requiredValidationLayers);
     createInfo.ppEnabledLayerNames = requiredValidationLayers;
 
     // Finally we can create the instance
     VkInstance instance = 0;
     VK_CHECK( vkCreateInstance(&createInfo, nullptr, &instance) );
-      
+
     return instance;
 }
 
@@ -53,7 +48,7 @@ GPUInfo_t pickGPU(VkInstance instance, VkSurfaceKHR surface)
     // vkEnumeratePhysicalDevices.
     u32 deviceCount = 0;
     vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
-        
+
     if (deviceCount == 0)
     {
         Logger::Fatal("No physical devices found.");
@@ -132,7 +127,7 @@ GPUInfo_t pickGPU(VkInstance instance, VkSurfaceKHR surface)
 
         std::vector<const char*> requiredExtensions;
         requiredExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
-        
+
         bool requiredExtensionsAreSupported = false;
         u32 extensionsMatch = 0;
         for (u32 i = 0; i < requiredExtensions.size(); i++)
@@ -147,12 +142,12 @@ GPUInfo_t pickGPU(VkInstance instance, VkSurfaceKHR surface)
                 }
             }
         }
-    
+
         if(extensionsMatch == requiredExtensions.size())
         {
             requiredExtensionsAreSupported = true;
         }
-    
+
         // We also want to query for the features, properties or memory properties we are
         // interested in. For now we only check for samplerAnisotropy (a feature).
         VkPhysicalDeviceFeatures features;
@@ -179,7 +174,7 @@ GPUInfo_t pickGPU(VkInstance instance, VkSurfaceKHR surface)
             break;
         }
     }
-        
+
     if (gpu.device == VK_NULL_HANDLE)
     {
         Logger::Fatal("Failed to find suitable GPU.");
@@ -215,10 +210,10 @@ VkDevice createDevice(VkInstance instance, const GPUInfo_t* gpu)
 }
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
-    VkDebugUtilsMessageSeverityFlagBitsEXT              messageSeverity,
-    VkDebugUtilsMessageTypeFlagsEXT                     messageTypes,
-    const VkDebugUtilsMessengerCallbackDataEXT*         pCallbackData,
-    void* pUserData)
+        VkDebugUtilsMessageSeverityFlagBitsEXT              messageSeverity,
+        VkDebugUtilsMessageTypeFlagsEXT                     messageTypes,
+        const VkDebugUtilsMessengerCallbackDataEXT*         pCallbackData,
+        void* pUserData)
 {
 
     switch (messageSeverity)
@@ -234,7 +229,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
             Logger::Log(pCallbackData->pMessage);
             break;
     }
-    
+
     // We return VK_FALSE here since from Vulkan spec 1.2.133, ch. 39.1:
     // "The callback returns a VkBool32, which is interpreted in a layer-specified manner.
     // The application should always return VK_FALSE. The VK_TRUE value is reserved for use in layer development."
@@ -246,9 +241,9 @@ void setupDebugMessenger(VkInstance instance, VkDebugUtilsMessengerEXT* debugMes
 {
     PFN_vkCreateDebugUtilsMessengerEXT vkCreateDebugUtilsMessengerEXT;
     vkCreateDebugUtilsMessengerEXT =
-        reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>
-        (vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT"));
-    
+            reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>
+            (vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT"));
+
     VkDebugUtilsMessengerCreateInfoEXT debugUtilsMessengerCI = {};
     debugUtilsMessengerCI.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
     debugUtilsMessengerCI.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;

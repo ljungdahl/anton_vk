@@ -11,13 +11,22 @@ include_directories(${VULKAN_INCLUDE}
         ${GLM_INCLUDE}
         external src)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 
 add_executable(anton_vk
-        src/anton_vk.cpp
         src/logger.cpp
         src/vma.cpp
-        )
+        src/main.cpp
+        src/vk_base.cpp src/vk_base.h
+        src/vk_device.cpp src/vk_device.h
+        src/vk_common.h
+        src/vk_surface.cpp src/vk_surface.h
+        src/vk_swapchain.cpp src/vk_swapchain.h
+        src/vk_resources.cpp src/vk_resources.h
+        src/vk_render.cpp src/vk_render.h
+        src/scene.cpp src/scene.h
+        src/vk_renderprograms.cpp src/vk_renderprograms.h
+        src/vertex_type.h)
 
 find_package(Vulkan REQUIRED)
 
