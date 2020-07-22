@@ -11,6 +11,10 @@ layout(location = 0) out vec4 outColor;
 
 void main() {
     vec3 n = normalize(Normal);
+    //vec3 light_dirs[NUM_LIGHTS];
+    //light_dirs[0] = vec3(-1.0f, 1.0f, 8.0f);
+    //light_dirs[1] = vec3(0.0f, 1.0f, -3.0f);
+
     float cosTheta0 = clamp( dot(n, normalize(light_dirs[0])), 0, 1);
     float cosTheta1 = clamp( dot(n, normalize(light_dirs[1])), 0, 1);
 

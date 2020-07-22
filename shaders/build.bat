@@ -6,7 +6,8 @@ IF NOT EXIST ..\build mkdir ..\build
 pushd ..\build\
 
 %glslc% ..\shaders\mesh.vert.glsl -o mesh.vert.spv
-%glslc% ..\shaders\gooch.frag.glsl -o gooch.frag.spv
+@rem %glslc% ..\shaders\gooch.frag.glsl -o gooch.frag.spv
 %glslc% ..\shaders\lambert.frag.glsl -o lambert.frag.spv
+%glslc% ..\shaders\vertexColors.frag.glsl -o vertexColors.frag.spv
 
 popd

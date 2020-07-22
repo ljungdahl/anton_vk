@@ -13,26 +13,19 @@
 #include "vk_render.h"
 #include "vk_renderprograms.h"
 
+Image_t vk_colorTarget = {};
+Image_t vk_depthTarget = {};
 
-Image_t colorTarget = {};
-Image_t depthTarget = {};
+VkFramebuffer vk_targetFramebuffer = 0;
 
-VkFramebuffer targetFramebuffer = 0;
-
-//TODO(anton): Bad lame drawcalls
-void drawCalls(VkCommandBuffer commandBuffer, Buffer_t &vb, Buffer_t &ib,
-               u32 indexCount) {
-
-}
-
-u32 prepareFrame(Uniforms_t &ubo_vs, std::vector<glm::vec4> &pc, f64 time) {
+void updateUniforms() {
 
     auto updateUBO = [&](Uniforms_t uniforms, Buffer_t &ubo_buffer, u32 width, u32 height,
                          VmaAllocator &vma_allocator) {
 
         uniforms.proj = glm::perspective(glm::radians(40.0f),
-                                      (f32)width / (f32)height,
-                                      0.1f, 256.0f);
+                                         (f32) width / (f32) height,
+                                        0.1f, 256.0f);
         uniforms.proj[1][1] *= -1;
 
         void *data;
@@ -41,67 +34,63 @@ u32 prepareFrame(Uniforms_t &ubo_vs, std::vector<glm::vec4> &pc, f64 time) {
         vmaUnmapMemory(vma_allocator, ubo_buffer.vmaAlloc);
     };
 
-    updateUBO(ubo_vs, uboBuffer, swapchain.width, swapchain.height, vma);
+    updateUBO(vk_uniformData, vk_uniformBuffer, vk_swapchain.width, vk_swapchain.height, vk_vma);
+}
 
-    auto updatePushConstants = [&](std::vector<glm::vec4> &pc, f64 t) {
-        f64 scale = 0.3f;
-        f64 angle = 2.0f * M_PI * t;
-        pc[0].x += scale * cos(angle / 4.0f);
-    };
+u32 prepareFrame() {
 
-    updatePushConstants(pc, time);
-
-    SwapchainStatus_t swapchainStatus = updateSwapchain(swapchain, gpu.device, vk_device,
-                                                        vk_context.surface, swapchainFormat,
-                                                        gpu.gfxFamilyIndex);
+    SwapchainStatus_t swapchainStatus = updateSwapchain(vk_swapchain, vk_gpu.device, vk_device,
+                                                        vk_context.surface, vk_swapchainFormat,
+                                                        vk_gpu.gfxFamilyIndex);
 
     if (swapchainStatus == Swapchain_NotReady) {
         return U32_MAX; // surface size is zero, don't render anything this iteration.
     }
 
-    if (swapchainStatus == Swapchain_Resized || !targetFramebuffer) {
-        if (colorTarget.image) {
-            destroyImage(colorTarget, vk_device, vma);
+    if (swapchainStatus == Swapchain_Resized || !vk_targetFramebuffer) {
+        if (vk_colorTarget.image) {
+            destroyImage(vk_colorTarget, vk_device, vk_vma);
         }
-        if (depthTarget.image) {
-            destroyImage(depthTarget, vk_device, vma);
+        if (vk_depthTarget.image) {
+            destroyImage(vk_depthTarget, vk_device, vk_vma);
         }
-        if (targetFramebuffer) {
-            vkDestroyFramebuffer(vk_device, targetFramebuffer, nullptr);
+        if (vk_targetFramebuffer) {
+            vkDestroyFramebuffer(vk_device, vk_targetFramebuffer, nullptr);
         }
 
-        createImage(colorTarget, vk_device, swapchain.width, swapchain.height, swapchainFormat,
+        createImage(vk_colorTarget, vk_device, vk_swapchain.width, vk_swapchain.height, vk_swapchainFormat,
                     VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_ASPECT_COLOR_BIT,
-                    vma);
-        createImage(depthTarget, vk_device, swapchain.width, swapchain.height, depthFormat,
-                    VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT, vma);
-        targetFramebuffer = createFramebuffer(vk_device, renderPass, colorTarget.view, depthTarget.view, swapchain.width,
-                                              swapchain.height);
+                    vk_vma);
+        createImage(vk_depthTarget, vk_device, vk_swapchain.width, vk_swapchain.height, vk_depthFormat,
+                    VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT, vk_vma);
+        vk_targetFramebuffer = createFramebuffer(vk_device, vk_renderPass, vk_colorTarget.view, vk_depthTarget.view,
+                                                 vk_swapchain.width,
+                                                 vk_swapchain.height);
     }
 
     u32 imageIndex = 0;
     VK_CHECK(
-            vkAcquireNextImageKHR(vk_device, swapchain.swapchain, U64_MAX,
-                                  acquireSemaphore, /*fence=*/VK_NULL_HANDLE, &imageIndex)
+            vkAcquireNextImageKHR(vk_device, vk_swapchain.swapchain, U64_MAX,
+                                  vk_acquireSemaphore, /*fence=*/VK_NULL_HANDLE, &imageIndex)
     );
 
-    VK_CHECK(vkResetCommandPool(vk_device, commandPool, 0)); //TODO(anton): Find out if I need it and why.
+    VK_CHECK(vkResetCommandPool(vk_device, vk_commandPool, 0)); //TODO(anton): Find out if I need it and why.
 
     VkCommandBufferBeginInfo cmdBeginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-    VK_CHECK(vkBeginCommandBuffer(commandBuffer, &cmdBeginInfo));
+    VK_CHECK(vkBeginCommandBuffer(vk_commandBuffer, &cmdBeginInfo));
 
     VkImageMemoryBarrier renderBeginBarriers[2] =
             {
-                    imageMemoryBarrier(colorTarget.image,
+                    imageMemoryBarrier(vk_colorTarget.image,
                                        0,
                                        0,
                                        VK_IMAGE_LAYOUT_UNDEFINED,
                                        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                                        VK_IMAGE_ASPECT_COLOR_BIT),
 
-                    imageMemoryBarrier(depthTarget.image,
+                    imageMemoryBarrier(vk_depthTarget.image,
                                        0,
                                        0,
                                        VK_IMAGE_LAYOUT_UNDEFINED,
@@ -109,33 +98,29 @@ u32 prepareFrame(Uniforms_t &ubo_vs, std::vector<glm::vec4> &pc, f64 time) {
                                        VK_IMAGE_ASPECT_DEPTH_BIT)
             };
 
-    vkCmdPipelineBarrier(commandBuffer,
+    vkCmdPipelineBarrier(vk_commandBuffer,
                          VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
                          VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
                          VK_DEPENDENCY_BY_REGION_BIT,
                          0, 0, 0, 0, ARRAYSIZE(renderBeginBarriers), renderBeginBarriers);
 
-    VkClearColorValue color = {48.0f * ((float)pc[0].x * 0.1f) / 255.0f, 10.0f / 255.0f, 36.0f / 255.0f, 1};
+    VkClearColorValue color = {48.0f / 255.0f, 10.0f / 255.0f, 36.0f / 255.0f, 1};
     VkClearValue clearVals[2];
     clearVals[0].color = color;
     clearVals[1].depthStencil = {1.0f, 0};
 
     VkRenderPassBeginInfo rpBeginInfo = {VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
-    rpBeginInfo.renderPass = renderPass;
-    rpBeginInfo.framebuffer = targetFramebuffer;
+    rpBeginInfo.renderPass = vk_renderPass;
+    rpBeginInfo.framebuffer = vk_targetFramebuffer;
     rpBeginInfo.renderArea.offset.x = 0;
     rpBeginInfo.renderArea.offset.y = 0;
-    rpBeginInfo.renderArea.extent.width = swapchain.width;
-    rpBeginInfo.renderArea.extent.height = swapchain.height;
+    rpBeginInfo.renderArea.extent.width = vk_swapchain.width;
+    rpBeginInfo.renderArea.extent.height = vk_swapchain.height;
     rpBeginInfo.clearValueCount = ARRAYSIZE(clearVals);
     rpBeginInfo.pClearValues = clearVals;
 
-    vkCmdBeginRenderPass(commandBuffer, &rpBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBeginRenderPass(vk_commandBuffer, &rpBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    vkCmdPushConstants(commandBuffer, gfxPipeLayout, VK_SHADER_STAGE_VERTEX_BIT, 0,
-                       sizeof(pc), pc.data());
-
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipeline);
 
     //NOTE(anton): swap the height here to account for Vulkan
     //screenspace layout? This is probably faster than multiplying
@@ -143,35 +128,65 @@ u32 prepareFrame(Uniforms_t &ubo_vs, std::vector<glm::vec4> &pc, f64 time) {
     VkViewport viewport = {};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
-    viewport.width = (f32) swapchain.width;
-    viewport.height = (f32) swapchain.height;
+    viewport.width = (f32) vk_swapchain.width;
+    viewport.height = (f32) vk_swapchain.height;
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
 
     VkRect2D scissor = {
-            {0,                     0},
-            {(u32) swapchain.width, (u32) swapchain.height}
+            {0,                        0},
+            {(u32) vk_swapchain.width, (u32) vk_swapchain.height}
     };
 
-    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+    vkCmdSetViewport(vk_commandBuffer, 0, 1, &viewport);
+    vkCmdSetScissor(vk_commandBuffer, 0, 1, &scissor);
+
+    // Bind the whole buffers and then we acces using the vkCmdDrawIndexed command?
+    // ie offsets are zero here.
+    VkDeviceSize vtxOffset = 0;
+    VkDeviceSize idxOffset = 0;
+    vkCmdBindVertexBuffers(vk_commandBuffer, 0, 1, &vk_staticVertexBuffer.buffer, &vtxOffset);
+    vkCmdBindIndexBuffer(vk_commandBuffer, vk_staticIndexBuffer.buffer, idxOffset, VK_INDEX_TYPE_UINT32);
 
     return imageIndex;
 }
 
+void drawMesh(u32 startVertex, u32 startIndex, u32 indexCount, f64 time) {
+//
+//    Logger::Trace("startVertex %i, startIndex %i, indexCount %i",
+//            startVertex, startIndex, indexCount);
+    auto updateLightsPushConstants = [&](glm::vec4 &lights, f64 t) {
+        f64 scale = 0.3f;
+        f64 angle = 2.0f * M_PI * t;
+        lights.x += scale * cos(angle / 4.0f);
+    };
+
+    updateLightsPushConstants(vk_pushConstants.lights[0], time);
+
+    vkCmdPushConstants(vk_commandBuffer, vk_gfxPipeLayout, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                       sizeof(vk_pushConstants), &vk_pushConstants);
+
+    vkCmdBindPipeline(vk_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_meshPipeline);
+
+    vkCmdBindDescriptorSets(vk_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_gfxPipeLayout,
+                            0, 1, vk_descSets, 0, nullptr);
+
+    vkCmdDrawIndexed(vk_commandBuffer, indexCount, 1, startIndex, startVertex, 0);
+}
+
 void submitFrame(u32 imageIndex) {
-    vkCmdEndRenderPass(commandBuffer);
+    vkCmdEndRenderPass(vk_commandBuffer);
 
     VkImageMemoryBarrier copyBarriers[2] =
             {
-                    imageMemoryBarrier(colorTarget.image,
+                    imageMemoryBarrier(vk_colorTarget.image,
                                        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
                                        VK_ACCESS_TRANSFER_READ_BIT,
                                        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                                        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                                        VK_IMAGE_ASPECT_COLOR_BIT),
 
-                    imageMemoryBarrier(swapchain.images[imageIndex],
+                    imageMemoryBarrier(vk_swapchain.images[imageIndex],
                                        0,
                                        VK_ACCESS_TRANSFER_WRITE_BIT,
                                        VK_IMAGE_LAYOUT_UNDEFINED,
@@ -179,7 +194,7 @@ void submitFrame(u32 imageIndex) {
                                        VK_IMAGE_ASPECT_COLOR_BIT)
             };
 
-    vkCmdPipelineBarrier(commandBuffer,
+    vkCmdPipelineBarrier(vk_commandBuffer,
                          VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
                          VK_PIPELINE_STAGE_TRANSFER_BIT,
                          VK_DEPENDENCY_BY_REGION_BIT,
@@ -190,53 +205,54 @@ void submitFrame(u32 imageIndex) {
     copyRegion.srcSubresource.layerCount = 1;
     copyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     copyRegion.dstSubresource.layerCount = 1;
-    copyRegion.extent = {swapchain.width, swapchain.height, 1};
+    copyRegion.extent = {vk_swapchain.width, vk_swapchain.height, 1};
 
-    vkCmdCopyImage(commandBuffer,
-                   colorTarget.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                   swapchain.images[imageIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+    vkCmdCopyImage(vk_commandBuffer,
+                   vk_colorTarget.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                   vk_swapchain.images[imageIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                    1, &copyRegion);
 
-    VkImageMemoryBarrier presentBarrier = imageMemoryBarrier(swapchain.images[imageIndex],
+    VkImageMemoryBarrier presentBarrier = imageMemoryBarrier(vk_swapchain.images[imageIndex],
                                                              VK_ACCESS_TRANSFER_WRITE_BIT,
                                                              0,
                                                              VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                                                              VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
                                                              VK_IMAGE_ASPECT_COLOR_BIT);
 
-    vkCmdPipelineBarrier(commandBuffer,
+    vkCmdPipelineBarrier(vk_commandBuffer,
                          VK_PIPELINE_STAGE_TRANSFER_BIT,
                          VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                          VK_DEPENDENCY_BY_REGION_BIT,
                          0, 0, 0, 0, 1, &presentBarrier);
 
-    VK_CHECK(vkEndCommandBuffer(commandBuffer));
+    VK_CHECK(vkEndCommandBuffer(vk_commandBuffer));
 
     VkPipelineStageFlags waitDstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 
     VkSubmitInfo submitInfo = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
     submitInfo.waitSemaphoreCount = 1;
-    submitInfo.pWaitSemaphores = &acquireSemaphore;
+    submitInfo.pWaitSemaphores = &vk_acquireSemaphore;
     submitInfo.pWaitDstStageMask = &waitDstStageMask;
     submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &commandBuffer;
+    submitInfo.pCommandBuffers = &vk_commandBuffer;
     submitInfo.signalSemaphoreCount = 1;
-    submitInfo.pSignalSemaphores = &releaseSemaphore;
+    submitInfo.pSignalSemaphores = &vk_releaseSemaphore;
 
-    vkQueueSubmit(queue, 1, &submitInfo, /*fence*/VK_NULL_HANDLE);
+    vkQueueSubmit(vk_queue, 1, &submitInfo, /*fence*/VK_NULL_HANDLE);
 
     VkPresentInfoKHR presentInfo = {VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
     presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores = &releaseSemaphore;
+    presentInfo.pWaitSemaphores = &vk_releaseSemaphore;
     presentInfo.swapchainCount = 1;
-    presentInfo.pSwapchains = &swapchain.swapchain;
+    presentInfo.pSwapchains = &vk_swapchain.swapchain;
     presentInfo.pImageIndices = &imageIndex;
 
-    VK_CHECK(vkQueuePresentKHR(queue, &presentInfo));
+    VK_CHECK(vkQueuePresentKHR(vk_queue, &presentInfo));
 
     VK_CHECK(vkDeviceWaitIdle(vk_device));
 
 }
+
 
 static VkFramebuffer
 createFramebuffer(VkDevice device, VkRenderPass renderPass, VkImageView colorView,

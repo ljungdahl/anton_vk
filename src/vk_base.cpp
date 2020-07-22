@@ -7,44 +7,29 @@
 #include "vk_renderprograms.h"
 
 VulkanContext_t vk_context;
-GPUInfo_t gpu;
+GPUInfo_t vk_gpu;
+Swapchain_t vk_swapchain;
+
 VkDevice vk_device;
-VkQueue queue = 0;
-VmaAllocator vma;
-VkFormat swapchainFormat, depthFormat;
-VkSemaphore acquireSemaphore;
-VkSemaphore releaseSemaphore;
-Swapchain_t swapchain;
-VkRenderPass renderPass;
-VkCommandPool commandPool = 0;
-VkCommandBuffer commandBuffer = 0;
+VkQueue vk_queue = 0;
+VmaAllocator vk_vma;
+VkFormat vk_swapchainFormat, vk_depthFormat;
+VkSemaphore vk_acquireSemaphore;
+VkSemaphore vk_releaseSemaphore;
 
-u32 imageIndex = 0;
+VkRenderPass vk_renderPass;
+VkCommandPool vk_commandPool = 0;
+VkCommandBuffer vk_commandBuffer = 0;
 
-Buffer_t vb = {};
-Buffer_t ib = {};
-Buffer_t uboBuffer = {};
+Buffer_t vk_staticVertexBuffer = {};
+Buffer_t vk_staticIndexBuffer = {};
+Buffer_t vk_uniformBuffer = {};
 
-Uniforms_t uboVS;
+u32 vk_imageIndex = 0;
 
-std::vector<glm::vec4> pushConstants; //NOTE(anton): vec4 instead of vec3 for alignment requirements
+Uniforms_t vk_uniformData = {};
 
-u32 renderFrame(u32 indexCount, f64 time) {
-    imageIndex = prepareFrame(uboVS, pushConstants, time);
-
-    VkDeviceSize offset = 0;
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vb.buffer, &offset);
-    vkCmdBindIndexBuffer(commandBuffer, ib.buffer, 0, VK_INDEX_TYPE_UINT32);
-
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            gfxPipeLayout, 0, 1, descSets, 0, nullptr);
-
-    vkCmdDrawIndexed(commandBuffer, indexCount, 1, 0, 0, 0);
-
-    submitFrame(imageIndex);
-
-    return imageIndex;
-}
+PushConstants_t vk_pushConstants;
 
 void initialiseVulkan(GLFWwindow *windowPtr) {
     vk_context.instance = createInstance();
@@ -55,35 +40,35 @@ void initialiseVulkan(GLFWwindow *windowPtr) {
 
     createGLFWsurface(windowPtr, vk_context);
 
-    gpu = pickGPU(vk_context.instance, vk_context.surface);
+    vk_gpu = pickGPU(vk_context.instance, vk_context.surface);
 
-    vk_device = createDevice(vk_context.instance, &gpu);
+    vk_device = createDevice(vk_context.instance, &vk_gpu);
 
-    vma = createVMAallocator(vk_context.instance, gpu.device, vk_device);
+    vk_vma = createVMAallocator(vk_context.instance, vk_gpu.device, vk_device);
 
-    swapchainFormat = getSwapchainFormat(gpu.device, vk_context.surface);
-    depthFormat = VK_FORMAT_D32_SFLOAT;
+    vk_swapchainFormat = getSwapchainFormat(vk_gpu.device, vk_context.surface);
+    vk_depthFormat = VK_FORMAT_D32_SFLOAT;
 
-    vkGetDeviceQueue(vk_device, gpu.gfxFamilyIndex, 0, &queue);
+    vkGetDeviceQueue(vk_device, vk_gpu.gfxFamilyIndex, 0, &vk_queue);
 
-    acquireSemaphore = createSemaphore(vk_device);
-    releaseSemaphore = createSemaphore(vk_device);
+    vk_acquireSemaphore = createSemaphore(vk_device);
+    vk_releaseSemaphore = createSemaphore(vk_device);
 
-    createSwapchain(swapchain, gpu.device, vk_device, vk_context.surface,
-                    swapchainFormat, gpu.gfxFamilyIndex, /*oldSwapchain=*/VK_NULL_HANDLE);
+    createSwapchain(vk_swapchain, vk_gpu.device, vk_device, vk_context.surface,
+                    vk_swapchainFormat, vk_gpu.gfxFamilyIndex, /*oldSwapchain=*/VK_NULL_HANDLE);
 
-    renderPass = createRenderPass(vk_device, swapchainFormat, depthFormat);
+    vk_renderPass = createRenderPass(vk_device, vk_swapchainFormat, vk_depthFormat);
 
-    commandPool = createCommandPool(vk_device, gpu.gfxFamilyIndex);
-    allocateCommandBuffer(vk_device, commandPool, &commandBuffer);
+    vk_commandPool = createCommandPool(vk_device, vk_gpu.gfxFamilyIndex);
+    allocateCommandBuffer(vk_device, vk_commandPool, &vk_commandBuffer);
+
+    vk_pushConstants.model = glm::mat4(1.0f);
+    Logger::Trace("sizeof(vk_pushConstants) %i", sizeof(vk_pushConstants));
 
     glm::vec4 initLight1Pos = glm::vec4(-1.0f, 1.0f, 8.0f, 1.0f);
     glm::vec4 initLight2Pos = glm::vec4(0.0f, 1.0f, -3.0f, 1.0f);
-    pushConstants.push_back(initLight1Pos);
-    pushConstants.push_back(initLight2Pos);
-
-    createBuffer(uboBuffer, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                 VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(uboVS), vma);
+    vk_pushConstants.lights[0] = initLight1Pos;
+    vk_pushConstants.lights[1] = initLight2Pos;
 
     glm::vec3 initCameraPos = glm::vec3(4.0f, 3.0f, 7.0f);
 
@@ -91,65 +76,111 @@ void initialiseVulkan(GLFWwindow *windowPtr) {
                                      glm::vec3(0.0f, 0.0f, 0.0f), // center
                                      glm::vec3(0.0f, 1.0f, 0.0f)); // up
 
-    uboVS.model = glm::mat4(1.0f);
-    uboVS.view = initView;
+    vk_uniformData.view = initView;
 
+    // Uniform buffer
+    createBuffer(vk_uniformBuffer,
+                 VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                 VMA_MEMORY_USAGE_CPU_TO_GPU,
+                 sizeof(vk_uniformData), vk_vma);
+
+    initialDescriptorSetup();
+    initialShaderLoad();
+    initialPipelineCreation();
 }
 
-void firstRenderPrograms() {
-    setupFirstTimeRenderprogs(sizeof(uboVS), pushConstants);
+u32 avk_prepareFrame(f64 time) {
+
+    vk_imageIndex = prepareFrame();
+    return vk_imageIndex;
 }
 
-void uploadVertices(u32 vbSize, const void *data) {
-    Buffer_t vb_staging = {};
-    createBuffer(vb,
+void avk_drawMesh(u32 vertexOffset, u32 indexOffset, u32 indexCount, f64 time) {
+
+    drawMesh(vertexOffset, indexOffset, indexCount, time);
+}
+
+void avk_endFrame() {
+    submitFrame(vk_imageIndex);
+}
+
+void createStaticBuffers(u32 vbSize, u32 ibSize) {
+    createBuffer(vk_staticVertexBuffer,
                  VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                  VMA_MEMORY_USAGE_GPU_ONLY,
-                 vbSize, vma);
+                 vbSize, vk_vma);
+
+    Logger::Trace("Created static vertexbuffer of size %i", vbSize);
+
+    createBuffer(vk_staticIndexBuffer,
+                 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                 VMA_MEMORY_USAGE_GPU_ONLY,
+                 ibSize, vk_vma);
+
+    Logger::Trace("Created static indexbuffer of size %i", ibSize);
+
+}
+
+void uploadUniformData(glm::mat4 view, glm::mat4 proj) {
+
+    vk_uniformData.view = view;
+
+    vk_uniformData.proj = proj;
+
+    updateUniforms();
+}
+
+void uploadModelMatrix(glm::mat4 model) {
+    vk_pushConstants.model = model;
+}
+
+void uploadVertices(u32 vbSize, u32 offset, const void *data) {
+    Buffer_t vb_staging = {};
+
+    ASSERT(vk_staticVertexBuffer.buffer != VK_NULL_HANDLE);
+
     createBuffer(vb_staging,
                  VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                  VMA_MEMORY_USAGE_CPU_ONLY,
-                 vbSize, vma);
-    uploadBuffer(vk_device, commandPool, commandBuffer, queue,
-                 vb, vb_staging,
-                 data, vbSize, vma);
+                 vbSize, vk_vma);
+
+    Logger::Trace("Created static staging vertex buffer of size %i", vbSize);
+
+    uploadBuffer(vk_device, vk_commandPool, vk_commandBuffer, vk_queue,
+                 vk_staticVertexBuffer, vb_staging,
+                 data, offset, vbSize, vk_vma);
+
+    Logger::Trace("Uploaded static vertex staging buffer of size %i at offset %i",
+                  vbSize, offset);
+
+    vmaDestroyBuffer(vk_vma, vb_staging.buffer, vb_staging.vmaAlloc);
+    Logger::Trace("Destroyed static staging vertex buffer");
 }
 
-void uploadIndices(u32 ibSize, const void *data) {
-        Buffer_t ib_staging = {};
-        createBuffer(ib,
-                     VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                     VMA_MEMORY_USAGE_GPU_ONLY,
-                     ibSize, vma);
-        createBuffer(ib_staging,
-                     VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                     VMA_MEMORY_USAGE_CPU_ONLY,
-                     ibSize, vma);
-        uploadBuffer(vk_device, commandPool, commandBuffer, queue,
-                     ib, ib_staging,
-                     data, ibSize, vma);
+void uploadIndices(u32 ibSize, u32 offset, const void *data) {
+    Buffer_t ib_staging = {};
+
+    ASSERT(vk_staticIndexBuffer.buffer != VK_NULL_HANDLE);
+
+    createBuffer(ib_staging,
+                 VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                 VMA_MEMORY_USAGE_CPU_ONLY,
+                 ibSize, vk_vma);
+
+    Logger::Trace("Created static staging index buffer of size %i at offset %i",
+                  ibSize, offset);
+
+    uploadBuffer(vk_device, vk_commandPool, vk_commandBuffer, vk_queue,
+                 vk_staticIndexBuffer, ib_staging,
+                 data, offset, ibSize, vk_vma);
+
+    Logger::Trace("Uploaded static index staging buffer of size %i", ibSize);
+
+    vmaDestroyBuffer(vk_vma, ib_staging.buffer, ib_staging.vmaAlloc);
+
+    Logger::Trace("Destroyed static staging index buffer");
 }
 
-void setVulkanUBORef(Uniforms_t uboRef) {
-    Logger::Trace("entered setVulkanUBORef");
-    uboVS.model = glm::mat4(1.0f);
-    Logger::Trace("uboVS.model = glm::mat4(1.0f);");
-
-    uboVS.view = uboRef.view;
-    Logger::Trace("uboVS.view = uboRef.view;");
-
-    uboVS.proj = uboRef.proj;
-    Logger::Trace("uboVS.proj = uboRef.proj;");
-
-    Logger::Trace("uboVS.view[0][1], [1][2], [2][3]: %f %f %f", uboVS.view[0][1], uboVS.view[1][2], uboVS.view[2][3]);
-    Logger::Trace("uboVS.proj[0][1], [1][2], [2][3]: %f %f %f", uboVS.proj[0][1], uboVS.proj[1][2], uboVS.proj[2][3]);
-
-
-    void *data;
-    vmaMapMemory(vma, uboBuffer.vmaAlloc, &data);
-    memcpy(data, &uboVS, sizeof(uboVS));
-    vmaUnmapMemory(vma, uboBuffer.vmaAlloc);
-}
 
 static
 VmaAllocator createVMAallocator(VkInstance instance, VkPhysicalDevice physicalDevice, VkDevice device) {
@@ -228,7 +259,7 @@ createRenderPass(VkDevice device, VkFormat colorFormat, VkFormat depth_format) {
     createInfo.pDependencies = &dependency;
 
     VkRenderPass rp = 0;
-    VK_CHECK( vkCreateRenderPass(device, &createInfo, nullptr, &rp) );
+    VK_CHECK(vkCreateRenderPass(device, &createInfo, nullptr, &rp));
     return rp;
 }
 

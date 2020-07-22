@@ -17,7 +17,7 @@ void uploadBuffer(VkDevice device, VkCommandPool commandPool,
                   VkCommandBuffer commandBuffer,
                   VkQueue queue,
                   const Buffer_t &buffer, const Buffer_t &scratch,
-                  const void *data, u32 size, VmaAllocator &vma_allocator);
+                  const void *data, u32 dstOffset, u32 size, VmaAllocator &vma_allocator);
 
 void createBuffer(Buffer_t &result,
                   VkBufferUsageFlags usage, VmaMemoryUsage vmaUsage,

@@ -6,8 +6,8 @@
 #include "scene.h"
 #include "vk_base.h"
 
-std::vector<Mesh_t> meshes;
-VPmatrices_t VPmatrices;
+std::vector<Mesh_t> g_meshes;
+VPmatrices_t g_VPmatrices;
 
 static bool uboBufferCreated = false;
 
@@ -18,15 +18,67 @@ void processKeyInput(GLFWwindow *windowPtr) {
 }
 
 void sendStaticResources(std::vector<Mesh_t> &meshList) {
-    for (auto mesh : meshList) {
-        u32 vbSize = mesh.vertices.size() * sizeof(mesh.vertices[0]);
-        u32 ibSize = mesh.indices.size() * sizeof(mesh.indices[0]);
-        uploadVertices(vbSize, mesh.vertices.data());
-        uploadIndices(ibSize, mesh.indices.data());
+    u32 totalVertexSize = 0;
+    u32 totalIndexSize = 0;
+    u32 vbOffset = 0;
+    u32 vbSize = 0;
+    u32 ibOffset = 0;
+    u32 ibSize = 0;
+    u32 meshCount = 0;
+    for (auto &mesh : meshList) {
+        vbSize = mesh.vertices.size() * sizeof(mesh.vertices[0]);
+        totalVertexSize += vbSize;
+        mesh.vertexOffset = vbOffset;
+        mesh.firstVertex = mesh.vertexOffset / sizeof(mesh.vertices[0]);
+
+        Logger::Trace("vbOffset = %i for mesh %i", mesh.vertexOffset, meshCount);
+        Logger::Trace("firstVertex = %i for mesh %i", mesh.firstVertex, meshCount);
+
+        vbOffset += vbSize; // The offset of the next mesh will be the size of the current one
+
+        ibSize = mesh.indices.size() * sizeof(mesh.indices[0]);
+        totalIndexSize += ibSize;
+        mesh.indexOffset = ibOffset;
+        mesh.firstIndex = mesh.indexOffset / sizeof(mesh.indices[0]);
+        Logger::Trace("ibOffset = %i for mesh %i", mesh.indexOffset, meshCount);
+        Logger::Trace("firstIndex = %i for mesh %i", mesh.firstIndex, meshCount);
+        ibOffset += ibSize;
+
+        meshCount += 1;
+
     }
 
+    Logger::Trace("total vertex size: %i", totalVertexSize);
+    Logger::Trace("total index size: %i", totalIndexSize);
+
+    createStaticBuffers(totalVertexSize, totalIndexSize);
+
+    meshCount = 0;
+    for (auto &mesh : meshList) {
+        u32 vertexSize = mesh.vertices.size() * sizeof(mesh.vertices[0]);
+        u32 indexSize = mesh.indices.size() * sizeof(mesh.indices[0]);
+        uploadVertices(vertexSize, mesh.vertexOffset, mesh.vertices.data());
+        uploadIndices(indexSize, mesh.indexOffset, mesh.indices.data());
+        meshCount += 1;
+    }
 }
 
+u32 render(f64 time, std::vector<Mesh_t> &meshList) {
+
+    u32 imageIndex = avk_prepareFrame(time);
+    if (imageIndex == U32_MAX) return imageIndex;
+    u32 meshIndex = 0;
+    uploadUniformData(g_VPmatrices.view, g_VPmatrices.proj);
+    for (Mesh_t &mesh : meshList) {
+        uploadModelMatrix(mesh.modelMatrix);
+        avk_drawMesh(mesh.firstVertex, mesh.firstIndex, mesh.indexCount, time); //TODO(anton): Material handle?
+        meshIndex += 1;
+    }
+
+    avk_endFrame();
+
+    return imageIndex;
+}
 
 i32 main(i32 argc, const char **argv) {
 #ifdef _DEBUG
@@ -53,35 +105,41 @@ i32 main(i32 argc, const char **argv) {
     initialiseVulkan(windowPtr);
 
     // Init scene
-    setupScene(meshes, VPmatrices, 1280, 720);
-    Logger::Trace("meshes.modelMatrix[0], meshes.modelMatrix[1], meshes.modelMatrix[2]: %f %f %f",
-            meshes[0].modelMatrix[0], meshes[0].modelMatrix[1], meshes[0].modelMatrix[2]);
+    setupScene(g_meshes, g_VPmatrices, 1280, 720);
+    sendStaticResources(g_meshes);
 
-    // Static resources
-    sendStaticResources(meshes);
-
-    // Setup first time renderprograms //TODO(anton): This is the bad way. Will redo completely.
-    firstRenderPrograms();
-
-    u32 imageIndex;
+    u32 imageIndex = 0;
     u32 frameCounter = 0;
     f64 elapsedTime = 0.0f;
     f64 previousTime = 0.0f;
     glfwSetTime(elapsedTime);
-    f64 deltaTime;
+    f64 deltaTime = 0;
 
-    Logger::Trace("meshes[0].indexCount: %i", meshes[0].indexCount);
-
+    f32 degs = 0.0f, degs2 = 0.0f;
     while (!glfwWindowShouldClose(windowPtr)) {
         glfwPollEvents();
 
         deltaTime = glfwGetTime() - previousTime;
 
+        // rotate mesh 1
+
+        if(g_meshes.size() > 1) {
+            f32 step = 1.0f;
+            degs = deltaTime * step;
+            degs2 = deltaTime * 0.1f*step;
+            glm::vec3 rotDir = glm::vec3(0.0f, 1.0f, 0.0f);
+            glm::vec3 rotDir2 = glm::vec3(1.0f, 0.0f, 1.0f);
+            glm::mat4 rotMat = glm::rotate(glm::mat4(1.0f), degs, rotDir);
+            glm::mat4 rotMat2 = glm::rotate(glm::mat4(1.0f), degs2, rotDir2);
+
+            g_meshes[1].modelMatrix = rotMat2 * rotMat * g_meshes[1].modelMatrix;
+        }
+
         processKeyInput(windowPtr);
 
         // Begin render calls
-        imageIndex = renderFrame(meshes[0].indexCount, elapsedTime);
-        if(imageIndex == U32_MAX) continue; // swapchainStatus == Swapchain_NotReady
+        imageIndex = render(elapsedTime, g_meshes);
+        if (imageIndex == U32_MAX) continue;
 
         // End render calls
         previousTime = elapsedTime;

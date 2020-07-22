@@ -1,13 +1,6 @@
 #pragma once
 #include "vk_common.h"
 
-extern VkDescriptorPool descPool;
-extern VkDescriptorSetLayout descSetLayout;
-extern VkDescriptorSet descSets[1];
-extern VkPipelineCache pipelineCache;
-extern VkPipelineLayout gfxPipeLayout;
-extern VkPipeline meshPipeline;
-
 void setupFirstTimeRenderprogs(u32 uboSize, std::vector<glm::vec4> &pc);
 
 static
@@ -28,3 +21,11 @@ static
 VkPipeline createGraphicsPipeline(VkDevice device, VkPipelineCache cache,
                                   VkRenderPass rp, Shader_t& vs, Shader_t& fs,
                                   VkPipelineLayout layout, VertexDescriptions_t* vtxDescs);
+
+static
+VkPipelineLayout createPipelineLayout(VkDevice device, VkDescriptorSetLayout *dcLayout,
+                                      VkPushConstantRange *pcRange);
+
+void initialDescriptorSetup();
+void initialShaderLoad();
+void initialPipelineCreation();

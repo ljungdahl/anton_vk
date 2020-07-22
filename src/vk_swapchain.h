@@ -1,26 +1,8 @@
 #pragma once
 
-#include <vector>
-#include <vulkan/vulkan.h>
+#include "vk_common.h"
 
 #define VSYNC 1
-
-struct Swapchain_t
-{
-    VkSwapchainKHR swapchain;
-    std::vector<VkImage> images;
-    u32 width, height;
-    u32 imageCount;
-};
-
-enum SwapchainStatus_t
-{
-    Swapchain_Ready,
-    Swapchain_Resized,
-    Swapchain_NotReady,
-};
-
-extern Swapchain_t swapchain;
 
 VkFormat getSwapchainFormat(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface);
 

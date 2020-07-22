@@ -14,53 +14,66 @@ struct VertexDescriptions_t {
 };
 
 //Fwd declares
-bool loadShader(Shader_t& shader, VkDevice device, std::string fileName, VkShaderStageFlagBits stage);
+bool loadShader(Shader_t &shader, VkDevice device, std::string fileName, VkShaderStageFlagBits stage);
+
 static VkShaderModule loadShaderModule(const char *fileName, VkDevice device);
+
 static VertexDescriptions_t getVertexDescriptions();
 
-Shader_t meshVS = {};
-Shader_t goochFS = {};
-Shader_t lambertFS = {};
+Shader_t vk_meshVS = {};
+Shader_t vk_goochFS = {};
+Shader_t vk_lambertFS = {};
+Shader_t vk_vertexColorFS = {};
 
-VkDescriptorPool descPool = 0;
-VkDescriptorSetLayout descSetLayout;
-VkDescriptorSet descSets[1];
-VkPipelineCache pipelineCache = 0;
-VkPipelineLayout gfxPipeLayout = 0;
-VkPipeline meshPipeline = 0;
+VkDescriptorPool vk_descPool = 0;
+VkDescriptorSetLayout vk_descSetLayout;
+VkDescriptorSet vk_descSets[1];
+VkPipelineCache vk_pipelineCache = 0;
+VkPipelineLayout vk_gfxPipeLayout = 0;
+VkPipeline vk_meshPipeline = 0;
 
-void setupFirstTimeRenderprogs(u32 uboSize, std::vector<glm::vec4> &pc) {
-    VertexDescriptions_t vtxDescs = getVertexDescriptions();
+bool g_shaders_loaded = false;
 
+void initialShaderLoad() {
     bool res = false;
-    res = loadShader(meshVS, vk_device, "../mesh.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
-    ASSERT(res);
-    res = loadShader(goochFS, vk_device, "../gooch.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
-    ASSERT(res);
-    res = loadShader(lambertFS, vk_device, "../lambert.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+    res = loadShader(vk_meshVS, vk_device, "../mesh.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
     ASSERT(res);
 
-    descPool = createDescriptorPool();
-    descSetLayout = createDescriptorSetLayout();
-    allocateDescriptorSet(descPool, descSetLayout, descSets, 1);
-    updateDescriptorSet(uboBuffer, /*offset*/0, /*range*/uboSize, descSets);
+    res = loadShader(vk_goochFS, vk_device, "../gooch.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+    ASSERT(res);
+    res = loadShader(vk_lambertFS, vk_device, "../lambert.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+    ASSERT(res);
+    res = loadShader(vk_vertexColorFS, vk_device, "../vertexColors.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+    ASSERT(res);
 
-    VkPushConstantRange pushConstantRange;
-    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    pushConstantRange.size = sizeof(pc); // NOTE(anton): SW samples uses this instead of above, why?
-    pushConstantRange.offset = 0;
+    g_shaders_loaded = true;
+}
 
-    VkPipelineLayoutCreateInfo layout_create_info = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-    layout_create_info.setLayoutCount = 1;
-    layout_create_info.pSetLayouts = &descSetLayout;
-    layout_create_info.pushConstantRangeCount = 1;
-    layout_create_info.pPushConstantRanges = &pushConstantRange;
+void initialPipelineCreation() {
+    VkPushConstantRange pcRange;
+    pcRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pcRange.size = sizeof(vk_pushConstants);
+    pcRange.offset = 0;
 
-    VK_CHECK(vkCreatePipelineLayout(vk_device, &layout_create_info, nullptr, &gfxPipeLayout));
-    meshPipeline = createGraphicsPipeline(vk_device, pipelineCache, renderPass,
-                                                     meshVS, lambertFS, gfxPipeLayout,
-                                                     &vtxDescs);
-    Logger::Trace("created Mesh pipeline!");
+    vk_gfxPipeLayout = createPipelineLayout(vk_device, &vk_descSetLayout, &pcRange);
+
+    ASSERT(g_shaders_loaded);
+    VertexDescriptions_t vtxDescs = getVertexDescriptions();
+    vk_meshPipeline = createGraphicsPipeline(vk_device, vk_pipelineCache, vk_renderPass,
+                                             vk_meshVS, vk_lambertFS, vk_gfxPipeLayout,
+                                             &vtxDescs);
+}
+
+void initialDescriptorSetup() {
+    vk_descPool = createDescriptorPool();
+
+    vk_descSetLayout = createDescriptorSetLayout();
+
+    allocateDescriptorSet(vk_descPool, vk_descSetLayout, vk_descSets, /*num desc sets*/1);
+
+    updateDescriptorSet(vk_uniformBuffer, 0, vk_uniformBuffer.size, vk_descSets);
+
+
 }
 
 static
@@ -89,12 +102,12 @@ VkDescriptorSetLayout createDescriptorSetLayout() {
 
     VkDescriptorSetLayoutBinding bindings[1] = {uboLayoutBinding};
 
-    VkDescriptorSetLayoutCreateInfo createInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
+    VkDescriptorSetLayoutCreateInfo createInfo = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
     createInfo.bindingCount = ARRAYSIZE(bindings);
     createInfo.pBindings = bindings;
 
     VkDescriptorSetLayout layout = 0;
-    VK_CHECK( vkCreateDescriptorSetLayout(vk_device, &createInfo, nullptr, &layout) );
+    VK_CHECK(vkCreateDescriptorSetLayout(vk_device, &createInfo, nullptr, &layout));
     return layout;
 }
 
@@ -103,13 +116,13 @@ void
 allocateDescriptorSet(VkDescriptorPool pool, VkDescriptorSetLayout layout,
                       VkDescriptorSet *descSets, u32 numDescSets) {
     VkDescriptorSetLayout layouts[1] = {layout};
-    ASSERT( ARRAYSIZE(layouts) == numDescSets);
-    VkDescriptorSetAllocateInfo allocInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
+    ASSERT(ARRAYSIZE(layouts) == numDescSets);
+    VkDescriptorSetAllocateInfo allocInfo = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
     allocInfo.descriptorPool = pool;
     allocInfo.pSetLayouts = layouts;
     allocInfo.descriptorSetCount = numDescSets;
 
-    VK_CHECK( vkAllocateDescriptorSets(vk_device, &allocInfo, descSets)  );
+    VK_CHECK(vkAllocateDescriptorSets(vk_device, &allocInfo, descSets));
 }
 
 
@@ -119,9 +132,9 @@ void updateDescriptorSet(Buffer_t ubo_buffer, u32 offset, u32 range,
     VkDescriptorBufferInfo bufferInfo = {};
     bufferInfo.buffer = ubo_buffer.buffer;
     bufferInfo.offset = offset;
-    bufferInfo.range  = range;
+    bufferInfo.range = range;
 
-    VkWriteDescriptorSet writeDescriptorSet = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+    VkWriteDescriptorSet writeDescriptorSet = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
     writeDescriptorSet.dstSet = descSets[0];
     writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     writeDescriptorSet.dstBinding = 0;
@@ -133,51 +146,76 @@ void updateDescriptorSet(Buffer_t ubo_buffer, u32 offset, u32 range,
 }
 
 static
+VkPipelineLayout createPipelineLayout(VkDevice device, VkDescriptorSetLayout *dcLayout,
+                                      VkPushConstantRange *pcRange) {
+    VkPipelineLayout layout = 0;
+    VkPipelineLayoutCreateInfo CI = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+    CI.setLayoutCount = 1;
+    CI.pSetLayouts = dcLayout;
+    CI.pushConstantRangeCount = 1;
+    CI.pPushConstantRanges = pcRange;
+
+//    VkPipelineLayout layout = 0;
+//    VkPipelineLayoutCreateInfo CI = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+//    CI.setLayoutCount = 1;
+//    CI.pSetLayouts = dcLayout;
+//    CI.pushConstantRangeCount = 0;
+//    CI.pPushConstantRanges = nullptr;
+
+    VK_CHECK(vkCreatePipelineLayout(device, &CI, nullptr, &layout));
+
+    return layout;
+}
+
+static
 VkPipeline
 createGraphicsPipeline(VkDevice device, VkPipelineCache cache, VkRenderPass rp, Shader_t &vs,
                        Shader_t &fs, VkPipelineLayout layout, VertexDescriptions_t *vtxDescs) {
-    VkGraphicsPipelineCreateInfo createInfo = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
+    VkGraphicsPipelineCreateInfo createInfo = {VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
 
     std::vector<VkPipelineShaderStageCreateInfo> stages;
     {
-        VkPipelineShaderStageCreateInfo v_stage = { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO };
+        VkPipelineShaderStageCreateInfo v_stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
         v_stage.stage = vs.stage;
         v_stage.module = vs.module;
         v_stage.pName = "main";
         stages.push_back(v_stage);
 
-        VkPipelineShaderStageCreateInfo f_stage = { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO };
+        VkPipelineShaderStageCreateInfo f_stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
         f_stage.stage = fs.stage;
         f_stage.module = fs.module;
         f_stage.pName = "main";
         stages.push_back(f_stage);
     }
 
-    createInfo.stageCount = (u32)stages.size();
+    createInfo.stageCount = (u32) stages.size();
     createInfo.pStages = stages.data();
 
     createInfo.pVertexInputState = &vtxDescs->inputState;
 
-    VkPipelineInputAssemblyStateCreateInfo inputAssembly = { VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly = {
+            VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
     inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     createInfo.pInputAssemblyState = &inputAssembly;
 
-    VkPipelineViewportStateCreateInfo viewportState = { VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO };
+    VkPipelineViewportStateCreateInfo viewportState = {VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
     viewportState.viewportCount = 1;
     viewportState.scissorCount = 1;
     createInfo.pViewportState = &viewportState;
 
-    VkPipelineRasterizationStateCreateInfo rasterizationState = { VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO };
+    VkPipelineRasterizationStateCreateInfo rasterizationState = {
+            VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
     rasterizationState.lineWidth = 1.f;
     rasterizationState.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rasterizationState.cullMode = VK_CULL_MODE_NONE; //VK_CULL_MODE_BACK_BIT;
     createInfo.pRasterizationState = &rasterizationState;
 
-    VkPipelineMultisampleStateCreateInfo multisampleState = { VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO };
+    VkPipelineMultisampleStateCreateInfo multisampleState = {VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
     multisampleState.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
     createInfo.pMultisampleState = &multisampleState;
 
-    VkPipelineDepthStencilStateCreateInfo depthStencilState = { VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO };
+    VkPipelineDepthStencilStateCreateInfo depthStencilState = {
+            VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
     depthStencilState.depthTestEnable = VK_TRUE;
     depthStencilState.depthWriteEnable = VK_TRUE;
     depthStencilState.depthCompareOp = VK_COMPARE_OP_LESS;
@@ -190,14 +228,14 @@ createGraphicsPipeline(VkDevice device, VkPipelineCache cache, VkRenderPass rp, 
             VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
             VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 
-    VkPipelineColorBlendStateCreateInfo colorBlendState = { VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
+    VkPipelineColorBlendStateCreateInfo colorBlendState = {VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
     colorBlendState.attachmentCount = 1;
     colorBlendState.pAttachments = &colorAttachmentState;
     createInfo.pColorBlendState = &colorBlendState;
 
-    VkDynamicState dynamicStates[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+    VkDynamicState dynamicStates[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
 
-    VkPipelineDynamicStateCreateInfo dynamicState = { VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO };
+    VkPipelineDynamicStateCreateInfo dynamicState = {VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
     dynamicState.dynamicStateCount = sizeof(dynamicStates) / sizeof(dynamicStates[0]);
     dynamicState.pDynamicStates = dynamicStates;
     createInfo.pDynamicState = &dynamicState;
@@ -206,7 +244,7 @@ createGraphicsPipeline(VkDevice device, VkPipelineCache cache, VkRenderPass rp, 
     createInfo.renderPass = rp;
 
     VkPipeline pipeline = 0;
-    VK_CHECK(vkCreateGraphicsPipelines(device, pipelineCache, 1, &createInfo, 0, &pipeline));
+    VK_CHECK(vkCreateGraphicsPipelines(device, cache, 1, &createInfo, 0, &pipeline));
 
     return pipeline;
 }
@@ -240,15 +278,13 @@ VertexDescriptions_t getVertexDescriptions() {
     return vtx_descs;
 }
 
-static VkShaderModule loadShaderModule(const char *fileName, VkDevice device)
-{
+static VkShaderModule loadShaderModule(const char *fileName, VkDevice device) {
     std::ifstream is(fileName, std::ios::binary | std::ios::in | std::ios::ate);
 
-    if (is.is_open())
-    {
+    if (is.is_open()) {
         size_t size = is.tellg();
         is.seekg(0, std::ios::beg);
-        char* shaderCode = new char[size];
+        char *shaderCode = new char[size];
         is.read(shaderCode, size);
         is.close();
 
@@ -258,26 +294,22 @@ static VkShaderModule loadShaderModule(const char *fileName, VkDevice device)
         VkShaderModuleCreateInfo moduleCreateInfo{};
         moduleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
         moduleCreateInfo.codeSize = size;
-        moduleCreateInfo.pCode = (u32*)shaderCode;
+        moduleCreateInfo.pCode = (u32 *) shaderCode;
 
-        VK_CHECK( vkCreateShaderModule(device, &moduleCreateInfo, NULL, &shaderModule) );
+        VK_CHECK(vkCreateShaderModule(device, &moduleCreateInfo, NULL, &shaderModule));
 
         delete[] shaderCode;
 
         return shaderModule;
-    }
-    else
-    {
+    } else {
         Logger::Fatal("Could not open shader file %s", fileName);
         return VK_NULL_HANDLE;
     }
 }
 
-bool loadShader(Shader_t& shader, VkDevice device, std::string fileName, VkShaderStageFlagBits stage)
-{
+bool loadShader(Shader_t &shader, VkDevice device, std::string fileName, VkShaderStageFlagBits stage) {
     VkShaderModule module = loadShaderModule(fileName.c_str(), device);
-    if (module == VK_NULL_HANDLE)
-    {
+    if (module == VK_NULL_HANDLE) {
         return false;
     }
     shader.stage = stage;

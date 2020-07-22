@@ -1,26 +1,19 @@
-#include "logger.h"
-#include "vk_common.h"
 #include "vk_swapchain.h"
 
-
-VkFormat getSwapchainFormat(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface)
-{
-    ASSERT( surface != VK_NULL_HANDLE );
+VkFormat getSwapchainFormat(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface) {
+    ASSERT(surface != VK_NULL_HANDLE);
     u32 formats_count;
-    VK_CHECK( vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formats_count, nullptr) );
-    ASSERT( formats_count > 0 );
+    VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formats_count, nullptr));
+    ASSERT(formats_count > 0);
     std::vector<VkSurfaceFormatKHR> surface_formats(formats_count);
-    VK_CHECK( vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formats_count, surface_formats.data()) );
+    VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formats_count, surface_formats.data()));
 
-    if(surface_formats.size() == 1 && surface_formats[0].format == VK_FORMAT_UNDEFINED)
-    {
+    if (surface_formats.size() == 1 && surface_formats[0].format == VK_FORMAT_UNDEFINED) {
         return VK_FORMAT_R8G8B8A8_UNORM;
     }
 
-    for( VkSurfaceFormatKHR &surface_format : surface_formats )
-    {
-        if( surface_format.format == VK_FORMAT_R8G8B8A8_UNORM )
-        {
+    for (VkSurfaceFormatKHR &surface_format : surface_formats) {
+        if (surface_format.format == VK_FORMAT_R8G8B8A8_UNORM) {
             return surface_format.format;
         }
     }
@@ -42,36 +35,32 @@ VkFormat getDepthFormat(VkPhysicalDevice physicalDevice) {
 
     VkFormat depthFormat = VK_FORMAT_D32_SFLOAT;
 
-    for (auto& format : possibleDepthFormats)
-    {
+    for (auto &format : possibleDepthFormats) {
         VkFormatProperties formatProps;
         vkGetPhysicalDeviceFormatProperties(physicalDevice, format, &formatProps);
         // Format must support depth stencil attachment for optimal tiling
-        if (formatProps.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)
-        {
+        if (formatProps.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
             depthFormat = format;
             return depthFormat;
         }
     }
 
-    Logger::Warn("Fallback depth format: VK_FORMAT_D32_SFLOAT (may not be supported/support stencil attachment for optimal timing)");
+    Logger::Warn(
+            "Fallback depth format: VK_FORMAT_D32_SFLOAT (may not be supported/support stencil attachment for optimal timing)");
     return depthFormat;
 }
 
 
-void destroySwapchain(VkDevice device, const Swapchain_t& swapchain)
-{
+void destroySwapchain(VkDevice device, const Swapchain_t &swapchain) {
     vkDestroySwapchainKHR(device, swapchain.swapchain, 0);
 }
-
 
 static
 VkSwapchainKHR createSwapchainKHR(VkDevice device, VkSurfaceKHR surface,
                                   VkSurfaceCapabilitiesKHR surfaceCaps,
                                   VkFormat format, u32 width, u32 height,
-                                  u32 familyIndex, VkSwapchainKHR oldSwapchain)
-{
-    VkSwapchainCreateInfoKHR createInfo = { VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR };
+                                  u32 familyIndex, VkSwapchainKHR oldSwapchain) {
+    VkSwapchainCreateInfoKHR createInfo = {VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
     createInfo.surface = surface;
     createInfo.minImageCount = 2;
     createInfo.imageFormat = format;
@@ -93,14 +82,13 @@ VkSwapchainKHR createSwapchainKHR(VkDevice device, VkSurfaceKHR surface,
     createInfo.oldSwapchain = oldSwapchain;
 
     VkSwapchainKHR swapchain = 0;
-    VK_CHECK( vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapchain) );
+    VK_CHECK(vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapchain));
     return swapchain;
 }
 
-void createSwapchain(Swapchain_t& result, VkPhysicalDevice physicalDevice,
+void createSwapchain(Swapchain_t &result, VkPhysicalDevice physicalDevice,
                      VkDevice device, VkSurfaceKHR surface,
-                     VkFormat format, u32 familyIndex, VkSwapchainKHR oldSwapchain)
-{
+                     VkFormat format, u32 familyIndex, VkSwapchainKHR oldSwapchain) {
     VkSurfaceCapabilitiesKHR surfaceCaps;
     VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &surfaceCaps));
 
@@ -125,8 +113,9 @@ void createSwapchain(Swapchain_t& result, VkPhysicalDevice physicalDevice,
     result.imageCount = imageCount;
 }
 
-SwapchainStatus_t updateSwapchain(Swapchain_t& result, VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, VkFormat format, u32 familyIndex)
-{
+SwapchainStatus_t
+updateSwapchain(Swapchain_t &result, VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface,
+                VkFormat format, u32 familyIndex) {
     VkSurfaceCapabilitiesKHR surfaceCaps;
     VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &surfaceCaps));
 

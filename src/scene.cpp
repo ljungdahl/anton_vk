@@ -50,25 +50,54 @@ void loadObj(std::string ModelPath, Mesh_t* mmModel) {
 }
 
 void setupScene(std::vector<Mesh_t> &meshList, VPmatrices_t &vpMats, u32 width, u32 height) {
-    Mesh_t mesh;
-    loadObj("../../assets/coords2_soft.obj", &mesh);
 
-    mesh.modelMatrix = glm::mat4(1.0f);
-    meshList.push_back(mesh);
+    {
+        Mesh_t mesh1;
+        loadObj("../../assets/coords2_soft.obj", &mesh1);
 
-    glm::vec3 initCameraPos = glm::vec3(4.0f, 3.0f, 7.0f);
+        mesh1.modelMatrix = glm::mat4(1.0f);
+        meshList.push_back(mesh1);
 
-    glm::mat4 initView = glm::lookAt(initCameraPos, // eye
-                                     glm::vec3(0.0f, 0.0f, 0.0f), // center
-                                     glm::vec3(0.0f, 1.0f, 0.0f)); // up
+        mesh1.isStatic = true;
+    }
 
-    glm::mat4 initProj = glm::perspective(glm::radians(40.0f),
-                                          (f32) width / (f32) height,
-                                          0.1f, 256.0f);
+    {
+        Mesh_t mesh2;
+        loadObj("../../assets/cube.obj", &mesh2);
 
-    initProj *= -1;
+        mesh2.modelMatrix = glm::mat4(1.0f);
+        meshList.push_back(mesh2);
 
-    vpMats.view = initView;
-    vpMats.proj = initProj;
+        mesh2.isStatic = true;
+    }
+
+    {
+        Mesh_t mesh3;
+        loadObj("../../assets/bunny_soft.obj", &mesh3);
+
+        mesh3.modelMatrix = glm::mat4(1.0f);
+        mesh3.modelMatrix = glm::translate(mesh3.modelMatrix, glm::vec3(-2.0f, 0.0f, 0.0f));
+        meshList.push_back(mesh3);
+
+        mesh3.isStatic = true;
+    }
+
+    {
+        glm::vec3 initCameraPos = glm::vec3(4.0f, 3.0f, 7.0f);
+
+        glm::mat4 initView = glm::lookAt(initCameraPos, // eye
+                                         glm::vec3(0.0f, 0.0f, 0.0f), // center
+                                         glm::vec3(0.0f, 1.0f, 0.0f)); // up
+
+        glm::mat4 initProj = glm::perspective(glm::radians(40.0f),
+                                              (f32) width / (f32) height,
+                                              0.1f, 256.0f);
+
+        initProj *= -1;
+
+        vpMats.view = initView;
+        vpMats.proj = initProj;
+    }
+
 }
 

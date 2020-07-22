@@ -68,6 +68,9 @@ GPUInfo_t pickGPU(VkInstance instance, VkSurfaceKHR surface)
     {
         VkPhysicalDeviceProperties deviceProps;
         vkGetPhysicalDeviceProperties(physicalDevice, &deviceProps);
+        auto limits = deviceProps.limits;
+
+        Logger::Trace("maxPushConstantSize %i", limits.maxPushConstantsSize);
         Logger::Trace("Available device name: %s", deviceProps.deviceName);
 
         // See if we support graphics and present queue families
